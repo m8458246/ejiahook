@@ -1,9 +1,15 @@
 package com.cycy.ejiahook;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
+import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -12,9 +18,11 @@ import android.widget.Toast;
 
 /**
  * 配置界面。写入 SharedPreferences("config")，被注入的 ejia 进程通过
- * ConfigProvider 读取，改完设置无需重启目标应用。
+ * remote prefs / ConfigProvider / 调试文件读取，改完设置无需重启目标应用。
  */
 public class MainActivity extends Activity {
+
+    private static final int REQ_PHONE = 1001;
 
     private CheckBox cbLocation;
     private CheckBox cbDevice;
@@ -24,6 +32,7 @@ public class MainActivity extends Activity {
     private EditText etCity;
     private EditText etAddress;
     private EditText etDevice;
+    private TextView tvDeviceSource;
 
     private SharedPreferences prefs;
 
@@ -41,12 +50,31 @@ public class MainActivity extends Activity {
         etCity = findViewById(R.id.et_city);
         etAddress = findViewById(R.id.et_address);
         etDevice = findViewById(R.id.et_device);
+        tvDeviceSource = findViewById(R.id.tv_device_source);
         Button btnSave = findViewById(R.id.btn_save);
         TextView tvTip = findViewById(R.id.tv_tip);
 
         load();
         btnSave.setOnClickListener(v -> save());
         tvTip.setText(getString(R.string.tip));
+
+        if (!hasPhonePermission()) {
+            requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, REQ_PHONE);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshDeviceField();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_PHONE) {
+            refreshDeviceField();
+        }
     }
 
     private void load() {
@@ -57,7 +85,74 @@ public class MainActivity extends Activity {
         etRadius.setText(prefs.getString(Config.KEY_RADIUS, "5"));
         etCity.setText(prefs.getString(Config.KEY_CITY, ""));
         etAddress.setText(prefs.getString(Config.KEY_ADDRESS, ""));
-        etDevice.setText(prefs.getString(Config.KEY_DEVICE_ID, ""));
+    }
+
+    /**
+     * 标识输入框：
+     * 未启用覆盖时，永远显示真实值（每次回到界面都会重新读，改坏了也会恢复）；
+     * 启用覆盖时，显示用户自己填的值。
+     */
+    private void refreshDeviceField() {
+        if (cbDevice.isChecked()) {
+            etDevice.setText(prefs.getString(Config.KEY_DEVICE_ID, ""));
+            tvDeviceSource.setText(R.string.device_source_custom);
+            return;
+        }
+        RealId real = readRealId();
+        if (real != null) {
+            etDevice.setText(real.value);
+            tvDeviceSource.setText(getString(R.string.device_source_real, real.source));
+        } else {
+            etDevice.setText("");
+            tvDeviceSource.setText(hasPhonePermission()
+                    ? R.string.device_source_none
+                    : R.string.device_source_grant);
+        }
+    }
+
+    private static final class RealId {
+        final String value;
+        final String source;
+
+        RealId(String value, String source) {
+            this.value = value;
+            this.source = source;
+        }
+    }
+
+    private RealId readRealId() {
+        TelephonyManager tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
+        if (tm != null && hasPhonePermission()) {
+            String imei = safeGet(tm, "imei");
+            if (!TextUtils.isEmpty(imei)) {
+                return new RealId(imei, "IMEI");
+            }
+            String meid = safeGet(tm, "meid");
+            if (!TextUtils.isEmpty(meid)) {
+                return new RealId(meid, "MEID");
+            }
+        }
+        String androidId = Settings.Secure.getString(getContentResolver(), "android_id");
+        if (!TextUtils.isEmpty(androidId)) {
+            return new RealId(androidId, "ANDROID_ID");
+        }
+        return null;
+    }
+
+    private String safeGet(TelephonyManager tm, String kind) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                return null;
+            }
+            return "imei".equals(kind) ? tm.getImei() : tm.getMeid();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private boolean hasPhonePermission() {
+        return checkSelfPermission(Manifest.permission.READ_PHONE_STATE)
+                == PackageManager.PERMISSION_GRANTED;
     }
 
     private void save() {
@@ -120,6 +215,7 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_CITY, etCity.getText().toString().trim())
                 .putString(Config.KEY_ADDRESS, etAddress.getText().toString().trim())
                 .putBoolean(Config.KEY_DEVICE_ENABLED, deviceOn)
+                // 未启用覆盖时不保存显示出来的真实值，避免把真实标识写进配置
                 .putString(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "")
                 .apply();
 

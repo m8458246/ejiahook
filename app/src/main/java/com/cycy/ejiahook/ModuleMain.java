@@ -42,6 +42,7 @@ public class ModuleMain extends XposedModule {
             ClassLoader cl = param.getClassLoader();
             LocationHooks.install(this, cl);
             DeviceIdHooks.install(this);
+            DebugHooks.install(this, cl);
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "安装 hook 异常", t);
         }

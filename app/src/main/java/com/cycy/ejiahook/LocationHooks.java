@@ -3,6 +3,8 @@ package com.cycy.ejiahook;
 import android.util.Log;
 
 import java.lang.reflect.Method;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.libxposed.api.XposedModule;
 
@@ -27,8 +29,7 @@ final class LocationHooks {
 
     private static final String TAG = "EjiaHook";
     private static final String BD_LOCATION = "com.baidu.location.BDLocation";
-
-    private static volatile boolean sLogged;
+    private static final AtomicInteger sTrace = new AtomicInteger();
 
     private LocationHooks() {
     }
@@ -80,13 +81,14 @@ final class LocationHooks {
                                   final Method setLat, final Method setLng) {
         try {
             module.hook(getter).intercept(chain -> {
+                Object raw = chain.proceed();
                 Config c = Config.get();
                 if (!c.enabled || !c.hasTarget) {
-                    return chain.proceed();
+                    return raw;
                 }
                 Object self = chain.getThisObject();
                 if (self == null) {
-                    return chain.proceed();
+                    return raw;
                 }
                 double[] target = Drift.targetFor(self, c);
                 if (setLat != null && setLng != null) {
@@ -97,10 +99,10 @@ final class LocationHooks {
                     } catch (Throwable ignored) {
                     }
                 }
-                if (!sLogged) {
-                    sLogged = true;
-                    module.log(Log.INFO, TAG, String.format(java.util.Locale.US,
-                            "定位已替换 -> %.6f,%.6f (半径 %.1fm)", target[0], target[1], c.radius));
+                if (c.debug && sTrace.getAndIncrement() < 20) {
+                    module.log(Log.INFO, TAG, String.format(Locale.US,
+                            "定位替换 %s: 原值=%s -> %.6f,%.6f (半径 %.1fm)",
+                            getter.getName(), raw, target[0], target[1], c.radius));
                 }
                 return isLat ? target[0] : target[1];
             });
@@ -120,6 +122,10 @@ final class LocationHooks {
                 String override = isAddr ? c.address : c.city;
                 if (override.isEmpty()) {
                     return result;
+                }
+                if (c.debug && sTrace.getAndIncrement() < 40) {
+                    module.log(Log.INFO, TAG, "文本覆盖 " + getter.getName()
+                            + ": 原值=" + result + " -> " + override);
                 }
                 // 覆盖值非空就返回它：真机没信号、地址为空时也能给出一个“成功”的定位
                 return override;

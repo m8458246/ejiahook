@@ -8,18 +8,25 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 
 /**
- * 模块配置。
+ * 模块配置。取配置的顺序（先拿到先用）：
  *
- * <p>模块 App 侧把配置写进 SharedPreferences("config")；被注入的 ejia 进程按下面顺序取：</p>
  * <ol>
- *   <li>LSPosed 的 remote preferences（框架直接读模块 App 的 prefs，不经过 Binder）</li>
- *   <li>模块导出的只读 ContentProvider（部分 ROM 会拦掉，见 RemotePrefs 注释）</li>
+ *   <li><b>调试文件</b>：/data/local/tmp/ejiahook.json、/sdcard/ejiahook.json、
+ *       /sdcard/Download/ejiahook.json。给 root 调试用，改完不用碰 UI。</li>
+ *   <li>LSPosed remote preferences（框架直读模块 App 的 prefs）</li>
+ *   <li>模块导出的只读 ContentProvider（部分 ROM 会拦，见 RemotePrefs 注释）</li>
  *   <li>都拿不到就沿用上一次的有效配置</li>
  * </ol>
  */
@@ -37,10 +44,17 @@ public final class Config {
     public static final String KEY_CITY = "city";
     public static final String KEY_DEVICE_ENABLED = "device_enabled";
     public static final String KEY_DEVICE_ID = "device_id";
+    public static final String KEY_DEBUG = "debug";
 
     private static final String TAG = "EjiaHook";
     private static final long TTL_MS = 2000L;
     private static final Object LOCK = new Object();
+
+    private static final String[] DEBUG_FILES = {
+            "/data/local/tmp/ejiahook.json",
+            "/sdcard/ejiahook.json",
+            "/sdcard/Download/ejiahook.json",
+    };
 
     private static volatile Config sCache;
     private static volatile long sCacheAt;
@@ -63,13 +77,15 @@ public final class Config {
     public boolean deviceEnabled;
     /** 覆盖后的设备标识 */
     public String deviceId = "";
+    /** 调试日志开关 */
+    public boolean debug;
     /** 是否已有可用的目标坐标 */
     public boolean hasTarget;
 
     private Config() {
     }
 
-    /** 取当前配置，2 秒内复用缓存，避免每次定位都走一次 IPC。 */
+    /** 取当前配置，2 秒内复用缓存。 */
     public static Config get() {
         Config c = sCache;
         if (c != null && SystemClock.elapsedRealtime() - sCacheAt < TTL_MS) {
@@ -96,14 +112,27 @@ public final class Config {
     private static Config load() {
         Config fallback = sCache;
 
-        // 1) 框架远程 prefs
-        Map<String, ?> remote = readRemotePrefs();
-        if (remote != null && !remote.isEmpty()) {
-            noteChannel("remote-prefs");
-            return fromMap(remote);
+        // 1) root 调试文件
+        Map<String, Object> debugMap = readDebugFile();
+        if (debugMap != null) {
+            return fromMap(debugMap);
         }
 
-        // 2) 模块自己的 ContentProvider
+        // 2) 框架 remote prefs
+        try {
+            SharedPreferences remote = RemotePrefs.get();
+            if (remote != null) {
+                Map<String, ?> all = remote.getAll();
+                noteChannel("remote-prefs(" + all.size() + ")");
+                if (!all.isEmpty()) {
+                    return fromMap(all);
+                }
+            }
+        } catch (Throwable t) {
+            noteChannel("remote-prefs 异常: " + t);
+        }
+
+        // 3) 模块自己的 ContentProvider
         Context ctx = appContext();
         if (ctx == null) {
             warnOnce("拿不到 Application 上下文，暂时无法读取配置");
@@ -116,7 +145,7 @@ public final class Config {
         } catch (Throwable t) {
             warnOnce("Provider 读取配置失败: " + t);
         }
-        if (bundle != null) {
+        if (bundle != null && !bundle.isEmpty()) {
             Map<String, Object> map = new HashMap<>();
             for (String key : bundle.keySet()) {
                 map.put(key, bundle.get(key));
@@ -128,10 +157,42 @@ public final class Config {
         return fallback != null ? fallback : new Config();
     }
 
-    private static Map<String, ?> readRemotePrefs() {
-        try {
-            SharedPreferences sp = RemotePrefs.get();
-            return sp == null ? null : sp.getAll();
+    private static Map<String, Object> readDebugFile() {
+        for (String path : DEBUG_FILES) {
+            try {
+                File file = new File(path);
+                if (!file.isFile() || !file.canRead()) {
+                    continue;
+                }
+                String text = readAll(file);
+                if (text == null || text.trim().isEmpty()) {
+                    continue;
+                }
+                JSONObject json = new JSONObject(text);
+                Map<String, Object> map = new HashMap<>();
+                for (Iterator<String> it = json.keys(); it.hasNext(); ) {
+                    String key = it.next();
+                    map.put(key, json.get(key));
+                }
+                if (!map.isEmpty()) {
+                    noteChannel("debug-file " + path);
+                    return map;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static String readAll(File file) {
+        try (FileInputStream in = new FileInputStream(file)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+            return new String(out.toByteArray(), "UTF-8");
         } catch (Throwable t) {
             return null;
         }
@@ -163,6 +224,7 @@ public final class Config {
         c.city = nullToEmpty(getStr(map, KEY_CITY));
         c.deviceEnabled = getBool(map, KEY_DEVICE_ENABLED, false);
         c.deviceId = nullToEmpty(getStr(map, KEY_DEVICE_ID));
+        c.debug = getBool(map, KEY_DEBUG, false);
         c.hasTarget = (c.lat != 0 || c.lng != 0)
                 && c.lat >= -90 && c.lat <= 90
                 && c.lng >= -180 && c.lng <= 180;

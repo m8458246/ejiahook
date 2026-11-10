@@ -10,12 +10,16 @@
     <string name="radius">漂移半径（米，0 表示固定不动）</string>
     <string name="city">城市（可选覆盖）</string>
     <string name="address">地址（可选覆盖）</string>
-    <string name="device_id">标识值（留空 / 关闭开关则使用真实值）</string>
+    <string name="device_id">标识值（不勾选覆盖时显示真实值，可直接复制）</string>
     <string name="hint_lat">例如 39.908722</string>
     <string name="hint_lng">例如 116.397499</string>
     <string name="hint_radius">默认 5</string>
     <string name="hint_optional">不填则保留真实值</string>
     <string name="hint_device">例如 867500000000000</string>
     <string name="save">保存</string>
+    <string name="device_source_real">当前为真实值（来源：%1$s）</string>
+    <string name="device_source_custom">当前为自定义值，覆盖已启用</string>
+    <string name="device_source_none">读不到真实值，请授予电话权限（仅用于显示）</string>
+    <string name="device_source_grant">需要电话权限才能读取真实 IMEI，点这里授予</string>
     <string name="tip">保存后约 2 秒内生效，无需重启「神州e家」。\n坐标使用百度 / 高德的 GCJ-02 火星坐标系，直接填地图上取到的点即可。\n设备标识默认透传真实值；覆盖会同时作用于 IMEI、IMSI、SIM 序列号、android_id、Build.getSerial（填 MAC 格式时也会替换 Wi-Fi MAC）。</string>
 </resources>

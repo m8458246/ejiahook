@@ -47,10 +47,34 @@ ejia 的调用点（反编译核实）：
 
 - 启用定位伪造 + 纬度/经度（GCJ-02）+ 漂移半径（米，默认 5，0 表示不动）
 - 城市 / 地址（可选，留空保留真实值；填了以后即使真机没信号也能给出“成功”的定位）
-- 启用设备标识覆盖 + 标识值（留空或关闭则用真实值）
+- 启用设备标识覆盖 + 标识值（不勾选覆盖时输入框显示真实值，方便复制；每次回到界面都会重新读取真实值）
 
-配置走模块自己导出的只读 ContentProvider（`com.cycy.ejiahook.config`），
-被注入的 ejia 进程 `ContentResolver.call` 读取，2 秒缓存。
+读取顺序（先拿到先用）：
+
+1. 调试文件 `/data/local/tmp/ejiahook.json`、`/sdcard/ejiahook.json`、`/sdcard/Download/ejiahook.json`
+2. LSPosed remote preferences
+3. 模块导出的只读 ContentProvider（`com.cycy.ejiahook.config`，部分 ROM 会拦）
+
+## 调试
+
+写一个 JSON 就能改配置，不用碰 UI：
+
+```bash
+cat > /data/local/tmp/ejiahook.json <<'EOF'
+{"enabled":true,"lat":37.164507,"lng":119.753018,"radius":5,"debug":true}
+EOF
+chmod 644 /data/local/tmp/ejiahook.json
+```
+
+`debug: true` 时 logcat（tag `EjiaHook`）会输出：
+
+- `配置来源: debug-file ...`
+- `定位替换 K: 原值=xx -> 37.xxx,119.xxx`
+- `H5 调用定位插件: action=getCurrentPosition`
+- `H5 收到 code=0 body={"city":"...","address":"...","lat":..,"lng":..}`
+
+注意 `/data/local/tmp` 属于 `shell_data_file`，普通应用读不到，需要把文件 SELinux 上下文改成目标应用能读的（`chcon u:object_r:app_data_file:s0:cXX,c257,c512,c768`），或者直接放到 `/sdcard`。
+
 
 ## 编译
 
