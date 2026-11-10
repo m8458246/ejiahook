@@ -51,9 +51,8 @@ public final class Config {
     private static final Object LOCK = new Object();
 
     private static final String[] DEBUG_FILES = {
-            "/data/local/tmp/ejiahook.json",
-            "/sdcard/ejiahook.json",
             "/sdcard/Download/ejiahook.json",
+            "/sdcard/ejiahook.json",
     };
 
     private static volatile Config sCache;

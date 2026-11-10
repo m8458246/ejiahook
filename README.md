@@ -51,9 +51,13 @@ ejia 的调用点（反编译核实）：
 
 读取顺序（先拿到先用）：
 
-1. 调试文件 `/data/local/tmp/ejiahook.json`、`/sdcard/ejiahook.json`、`/sdcard/Download/ejiahook.json`
-2. LSPosed remote preferences
-3. 模块导出的只读 ContentProvider（`com.cycy.ejiahook.config`，部分 ROM 会拦）
+1. `/sdcard/Download/ejiahook.json`（模块 App 保存时会写一份到这里，root 调试也改这个）
+2. `/sdcard/ejiahook.json`（纯 root 调试用，优先级低于上一条的备选）
+3. LSPosed remote preferences
+4. 模块导出的只读 ContentProvider（`com.cycy.ejiahook.config`，部分 ROM 会拦）
+
+为什么优先文件：实测 ejia 进程里 `ContentResolver.call` 会报 `Unknown authority`，
+LSPosed 的 remote prefs 读回来也是空的，只有共享存储这条路稳定。
 
 ## 调试
 

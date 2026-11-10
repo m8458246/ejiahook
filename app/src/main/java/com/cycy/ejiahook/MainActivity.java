@@ -2,10 +2,17 @@ package com.cycy.ejiahook;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ContentResolver;
+import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -15,6 +22,12 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * 配置界面。写入 SharedPreferences("config")，被注入的 ejia 进程通过
@@ -219,7 +232,105 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "")
                 .apply();
 
+        // 同时落一份到 /sdcard/Download/ejiahook.json：
+        // 被注入的 ejia 进程读这个文件最稳（Provider 在部分 ROM 上会被拦）
+        publishConfigFile(locationOn, lat, lng, radius,
+                etCity.getText().toString().trim(),
+                etAddress.getText().toString().trim(),
+                deviceOn, deviceId);
+
         toast("已保存，约 2 秒内生效");
+    }
+
+    private static final String PUBLIC_FILE_NAME = "ejiahook.json";
+
+    private void publishConfigFile(boolean locationOn, double lat, double lng, double radius,
+                                   String city, String address, boolean deviceOn, String deviceId) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return;
+        }
+        try {
+            JSONObject json = new JSONObject();
+            json.put(Config.KEY_ENABLED, locationOn);
+            json.put(Config.KEY_LAT, locationOn ? format(lat) : "");
+            json.put(Config.KEY_LNG, locationOn ? format(lng) : "");
+            json.put(Config.KEY_RADIUS, format(radius));
+            json.put(Config.KEY_CITY, city);
+            json.put(Config.KEY_ADDRESS, address);
+            json.put(Config.KEY_DEVICE_ENABLED, deviceOn);
+            json.put(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "");
+            // 保留调试开关（调试时用 root 改文件，别被 UI 覆盖掉）
+            json.put(Config.KEY_DEBUG, readDebugFlag());
+            byte[] data = json.toString().getBytes("UTF-8");
+
+            ContentResolver cr = getContentResolver();
+            Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            long id = findPublicFileId(cr, collection);
+            if (id >= 0) {
+                Uri uri = ContentUris.withAppendedId(collection, id);
+                try (OutputStream out = cr.openOutputStream(uri, "wt")) {
+                    if (out != null) {
+                        out.write(data);
+                    }
+                }
+            } else {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, PUBLIC_FILE_NAME);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                Uri uri = cr.insert(collection, values);
+                if (uri != null) {
+                    try (OutputStream out = cr.openOutputStream(uri)) {
+                        if (out != null) {
+                            out.write(data);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private long findPublicFileId(ContentResolver cr, Uri collection) {
+        try (Cursor cursor = cr.query(collection,
+                new String[]{MediaStore.MediaColumns._ID},
+                MediaStore.MediaColumns.DISPLAY_NAME + "=?",
+                new String[]{PUBLIC_FILE_NAME}, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                return cursor.getLong(0);
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
+    private boolean readDebugFlag() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return false;
+        }
+        try {
+            ContentResolver cr = getContentResolver();
+            Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            long id = findPublicFileId(cr, collection);
+            if (id < 0) {
+                return false;
+            }
+            try (InputStream in = cr.openInputStream(ContentUris.withAppendedId(collection, id))) {
+                if (in == null) {
+                    return false;
+                }
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                byte[] chunk = new byte[1024];
+                int n;
+                while ((n = in.read(chunk)) > 0) {
+                    buffer.write(chunk, 0, n);
+                }
+                return new JSONObject(new String(buffer.toByteArray(), "UTF-8"))
+                        .optBoolean(Config.KEY_DEBUG, false);
+            }
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static String format(double value) {
