@@ -28,6 +28,8 @@ final class LocationHooks {
     private static final String TAG = "EjiaHook";
     private static final String BD_LOCATION = "com.baidu.location.BDLocation";
 
+    private static volatile boolean sLogged;
+
     private LocationHooks() {
     }
 
@@ -94,6 +96,11 @@ final class LocationHooks {
                         setLng.invoke(self, target[1]);
                     } catch (Throwable ignored) {
                     }
+                }
+                if (!sLogged) {
+                    sLogged = true;
+                    module.log(Log.INFO, TAG, String.format(java.util.Locale.US,
+                            "定位已替换 -> %.6f,%.6f (半径 %.1fm)", target[0], target[1], c.radius));
                 }
                 return isLat ? target[0] : target[1];
             });

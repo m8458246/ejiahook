@@ -14,13 +14,24 @@ android {
         versionName = "1.0.0"
     }
 
+    // 固定签名，保证每次 CI 出的包能覆盖安装（debug keystore 每次 runner 都不同）
+    signingConfigs {
+        create("stable") {
+            storeFile = file("keystore.jks")
+            storePassword = "ejiahook"
+            keyAlias = "ejiahook"
+            keyPassword = "ejiahook"
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("stable")
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("stable")
         }
     }
 
