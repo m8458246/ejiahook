@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.Light.DarkActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            配置通道：被注入的 ejia 进程通过 ContentResolver.call 读取配置。
+            无权限、仅暴露一个只读的 get 方法，不接受写入。
+        -->
+        <provider
+            android:name=".ConfigProvider"
+            android:authorities="com.cycy.ejiahook.config"
+            android:exported="true"
+            android:enabled="true"
+            android:grantUriPermissions="false" />
+
+    </application>
+
+</manifest>
