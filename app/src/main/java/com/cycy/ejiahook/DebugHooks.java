@@ -28,6 +28,50 @@ final class DebugHooks {
     static void install(XposedModule module, ClassLoader cl) {
         hookEncapsulatedResult(module, cl);
         hookPluginExecute(module, cl);
+        hookDsBridgeLocation(module, cl);
+    }
+
+    /**
+     * H5 走 dsbridge 取定位时走这里：DsBridgeWebViewActivity#hanndleLocationData(callback, BDLocation)。
+     * 这里打印的经纬度就是最终回给 H5 的值。
+     */
+    private static void hookDsBridgeLocation(XposedModule module, ClassLoader cl) {
+        try {
+            Class<?> cls = Class.forName("com.dcits.ehome.dsbridge.DsBridgeWebViewActivity", false, cl);
+            Method target = null;
+            for (Method method : cls.getDeclaredMethods()) {
+                if ("hanndleLocationData".equals(method.getName())) {
+                    target = method;
+                    break;
+                }
+            }
+            if (target == null) {
+                module.log(Log.WARN, TAG, "没找到 DsBridgeWebViewActivity#hanndleLocationData");
+                return;
+            }
+            target.setAccessible(true);
+            final Method m = target;
+            module.hook(m).intercept(chain -> {
+                if (Config.get().debug) {
+                    Object location = chain.getArg(1);
+                    String detail = String.valueOf(location);
+                    try {
+                        Class<?> bd = location.getClass();
+                        Method k = bd.getDeclaredMethod("K");
+                        Method q = bd.getDeclaredMethod("Q");
+                        k.setAccessible(true);
+                        q.setAccessible(true);
+                        detail = "lat=" + k.invoke(location) + " lng=" + q.invoke(location);
+                    } catch (Throwable ignored) {
+                    }
+                    module.log(Log.INFO, TAG, "dsbridge 定位回调 -> " + detail);
+                }
+                return chain.proceed();
+            });
+            module.log(Log.INFO, TAG, "调试 hook: DsBridgeWebViewActivity#hanndleLocationData");
+        } catch (Throwable t) {
+            module.log(Log.WARN, TAG, "调试 hook(dsbridge) 失败: " + t);
+        }
     }
 
     private static void hookEncapsulatedResult(XposedModule module, ClassLoader cl) {
