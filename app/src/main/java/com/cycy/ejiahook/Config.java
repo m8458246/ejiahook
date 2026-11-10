@@ -54,10 +54,10 @@ public final class Config {
     private static final long TTL_MS = 2000L;
     private static final Object LOCK = new Object();
 
-    private static final String[] DEBUG_FILES = {
-            "/sdcard/Download/ejiahook.json",
-            "/sdcard/ejiahook.json",
-    };
+    /** 配置文件的候选目录/前缀：模块 App 用 MediaStore 写，可能会被系统改名成 ejiahook (1).json */
+    private static final String DOWNLOAD_DIR = "/sdcard/Download";
+    private static final String FILE_PREFIX = "ejiahook";
+    private static final String FILE_SUFFIX = ".json";
 
     private static volatile Config sCache;
     private static volatile long sCacheAt;
@@ -165,9 +165,8 @@ public final class Config {
     }
 
     private static Map<String, Object> readDebugFile() {
-        for (String path : DEBUG_FILES) {
+        for (File file : candidateFiles()) {
             try {
-                File file = new File(path);
                 if (!file.isFile() || !file.canRead()) {
                     continue;
                 }
@@ -182,13 +181,34 @@ public final class Config {
                     map.put(key, json.get(key));
                 }
                 if (!map.isEmpty()) {
-                    noteChannel("debug-file " + path);
+                    noteChannel("debug-file " + file.getAbsolutePath());
                     return map;
                 }
             } catch (Throwable ignored) {
             }
         }
         return null;
+    }
+
+    /** 收集候选配置文件，按修改时间从新到旧。 */
+    private static java.util.List<File> candidateFiles() {
+        java.util.List<File> files = new java.util.ArrayList<>();
+        try {
+            File dir = new File(DOWNLOAD_DIR);
+            File[] list = dir.listFiles();
+            if (list != null) {
+                for (File f : list) {
+                    String name = f.getName();
+                    if (name.startsWith(FILE_PREFIX) && name.endsWith(FILE_SUFFIX)) {
+                        files.add(f);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        files.add(new File("/sdcard/ejiahook.json"));
+        files.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        return files;
     }
 
     private static String readAll(File file) {
