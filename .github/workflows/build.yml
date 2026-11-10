@@ -53,6 +53,19 @@ jobs:
             app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
+      # 发到 latest release，便于直接下载安装（artifact 需要登录才能下）
+      - name: Publish latest release
+        if: success() && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: latest build
+          body: 自动构建产物（debug + release 均已签名，可直接安装）
+          files: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
+          make_latest: true
+
       # 构建失败时把日志推到 ci-logs 分支，方便在外部直接看
       - name: Publish build log on failure
         if: failure()
