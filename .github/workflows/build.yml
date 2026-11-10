@@ -3,13 +3,13 @@ name: build
 on:
   push:
     branches: [ main ]
-    paths-ignore:
-      - '**.md'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,8 +20,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Show Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+          ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -32,16 +36,15 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
-
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
-
-      - name: Build release APK
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Upload APKs
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ejiahook-apk
@@ -49,3 +52,17 @@ jobs:
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+
+      # 构建失败时把日志推到 ci-logs 分支，方便在外部直接看
+      - name: Publish build log on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp build.log ci-failure.log 2>/dev/null
+          git checkout -B ci-logs
+          git add -f ci-failure.log
+          git commit -m "ci: failure log $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -f origin ci-logs
