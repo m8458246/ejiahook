@@ -2,20 +2,26 @@ package com.cycy.ejiahook;
 
 import android.app.Application;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 模块配置。
  *
- * <p>模块 App 侧把配置写进 SharedPreferences("config")；
- * 被注入的 ejia 进程通过本模块导出的 ContentProvider（只读 get）读取，
- * 因此改完设置不需要重启 ejia。</p>
+ * <p>模块 App 侧把配置写进 SharedPreferences("config")；被注入的 ejia 进程按下面顺序取：</p>
+ * <ol>
+ *   <li>LSPosed 的 remote preferences（框架直接读模块 App 的 prefs，不经过 Binder）</li>
+ *   <li>模块导出的只读 ContentProvider（部分 ROM 会拦掉，见 RemotePrefs 注释）</li>
+ *   <li>都拿不到就沿用上一次的有效配置</li>
+ * </ol>
  */
 public final class Config {
 
@@ -38,7 +44,8 @@ public final class Config {
 
     private static volatile Config sCache;
     private static volatile long sCacheAt;
-    private static volatile boolean sProviderWarned;
+    private static volatile String sChannel;
+    private static volatile boolean sWarned;
 
     /** 定位伪造开关 */
     public boolean enabled;
@@ -88,46 +95,90 @@ public final class Config {
 
     private static Config load() {
         Config fallback = sCache;
+
+        // 1) 框架远程 prefs
+        Map<String, ?> remote = readRemotePrefs();
+        if (remote != null && !remote.isEmpty()) {
+            noteChannel("remote-prefs");
+            return fromMap(remote);
+        }
+
+        // 2) 模块自己的 ContentProvider
         Context ctx = appContext();
         if (ctx == null) {
-            if (!sProviderWarned) {
-                sProviderWarned = true;
-                Log.w(TAG, "拿不到 Application 上下文，暂用默认配置");
-            }
+            warnOnce("拿不到 Application 上下文，暂时无法读取配置");
             return fallback != null ? fallback : new Config();
         }
-        Bundle b = null;
+        Bundle bundle = null;
         try {
-            b = ctx.getContentResolver().call(
+            bundle = ctx.getContentResolver().call(
                     Uri.parse("content://" + AUTHORITY), METHOD_GET, null, null);
         } catch (Throwable t) {
-            if (!sProviderWarned) {
-                sProviderWarned = true;
-                Log.w(TAG, "读取模块配置失败（模块 App 是否被强行停止？）: " + t);
+            warnOnce("Provider 读取配置失败: " + t);
+        }
+        if (bundle != null) {
+            Map<String, Object> map = new HashMap<>();
+            for (String key : bundle.keySet()) {
+                map.put(key, bundle.get(key));
             }
+            noteChannel("provider");
+            return fromMap(map);
         }
-        if (b == null) {
-            return fallback != null ? fallback : new Config();
-        }
-        return fromBundle(b);
+
+        return fallback != null ? fallback : new Config();
     }
 
-    private static Config fromBundle(Bundle b) {
+    private static Map<String, ?> readRemotePrefs() {
+        try {
+            SharedPreferences sp = RemotePrefs.get();
+            return sp == null ? null : sp.getAll();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static void noteChannel(String channel) {
+        if (!channel.equals(sChannel)) {
+            sChannel = channel;
+            Log.i(TAG, "配置来源: " + channel);
+        }
+    }
+
+    private static void warnOnce(String message) {
+        if (!sWarned) {
+            sWarned = true;
+            Log.w(TAG, message);
+        }
+    }
+
+    private static Config fromMap(Map<String, ?> map) {
         Config c = new Config();
-        c.enabled = b.getBoolean(KEY_ENABLED, false);
-        c.radius = parseDouble(b.getString(KEY_RADIUS), 5.0);
+        c.enabled = getBool(map, KEY_ENABLED, false);
+        c.radius = parseDouble(getStr(map, KEY_RADIUS), 5.0);
         if (c.radius < 0) c.radius = 0;
         if (c.radius > 5000) c.radius = 5000;
-        c.lat = parseDouble(b.getString(KEY_LAT), 0);
-        c.lng = parseDouble(b.getString(KEY_LNG), 0);
-        c.address = nullToEmpty(b.getString(KEY_ADDRESS));
-        c.city = nullToEmpty(b.getString(KEY_CITY));
-        c.deviceEnabled = b.getBoolean(KEY_DEVICE_ENABLED, false);
-        c.deviceId = nullToEmpty(b.getString(KEY_DEVICE_ID));
+        c.lat = parseDouble(getStr(map, KEY_LAT), 0);
+        c.lng = parseDouble(getStr(map, KEY_LNG), 0);
+        c.address = nullToEmpty(getStr(map, KEY_ADDRESS));
+        c.city = nullToEmpty(getStr(map, KEY_CITY));
+        c.deviceEnabled = getBool(map, KEY_DEVICE_ENABLED, false);
+        c.deviceId = nullToEmpty(getStr(map, KEY_DEVICE_ID));
         c.hasTarget = (c.lat != 0 || c.lng != 0)
                 && c.lat >= -90 && c.lat <= 90
                 && c.lng >= -180 && c.lng <= 180;
         return c;
+    }
+
+    private static String getStr(Map<String, ?> map, String key) {
+        Object v = map.get(key);
+        return v == null ? null : String.valueOf(v);
+    }
+
+    private static boolean getBool(Map<String, ?> map, String key, boolean def) {
+        Object v = map.get(key);
+        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof String) return Boolean.parseBoolean((String) v);
+        return def;
     }
 
     private static String nullToEmpty(String s) {

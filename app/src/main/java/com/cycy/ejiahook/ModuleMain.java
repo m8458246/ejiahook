@@ -19,9 +19,11 @@ public class ModuleMain extends XposedModule {
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
+        RemotePrefs.attach(this);
         log(Log.INFO, TAG, "模块加载: process=" + param.getProcessName()
                 + " framework=" + getFrameworkName()
-                + " api=" + getApiVersion());
+                + " api=" + getApiVersion()
+                + " remote=" + ((getFrameworkProperties() & PROP_CAP_REMOTE) != 0));
     }
 
     @Override
