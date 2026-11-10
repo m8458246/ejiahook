@@ -141,10 +141,17 @@
             android:textSize="13sp" />
 
         <Button
-            android:id="@+id/btn_save"
+            android:id="@+id/btn_capture"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
+            android:text="@string/capture" />
+
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
             android:text="@string/save" />
 
         <TextView

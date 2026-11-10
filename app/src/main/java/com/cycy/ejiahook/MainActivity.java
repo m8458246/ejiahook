@@ -2,9 +2,13 @@ package com.cycy.ejiahook;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -16,7 +20,6 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
-import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -30,12 +33,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 /**
- * 配置界面。写入 SharedPreferences("config")，被注入的 ejia 进程通过
- * remote prefs / ConfigProvider / 调试文件读取，改完设置无需重启目标应用。
+ * 配置界面。写入 SharedPreferences("config") 和 /sdcard/Download/ejiahook.json，
+ * 被注入的 ejia 进程读文件拿配置，改完设置无需重启目标应用。
  */
 public class MainActivity extends Activity {
 
     private static final int REQ_PHONE = 1001;
+    private static final String PUBLIC_FILE_NAME = "ejiahook.json";
 
     private CheckBox cbLocation;
     private CheckBox cbDevice;
@@ -48,6 +52,34 @@ public class MainActivity extends Activity {
     private TextView tvDeviceSource;
 
     private SharedPreferences prefs;
+
+    private final BroadcastReceiver captureReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!Config.ACTION_CAPTURE.equals(intent.getAction())) {
+                return;
+            }
+            double lat = intent.getDoubleExtra("lat", 0);
+            double lng = intent.getDoubleExtra("lng", 0);
+            String city = intent.getStringExtra("city");
+            String address = intent.getStringExtra("address");
+            if (lat == 0 && lng == 0) {
+                return;
+            }
+            etLat.setText(format(lat));
+            etLng.setText(format(lng));
+            if (!TextUtils.isEmpty(city)) {
+                etCity.setText(city);
+            }
+            if (!TextUtils.isEmpty(address)) {
+                etAddress.setText(address);
+            }
+            toast("已填入真实定位，可按需微调后保存");
+            // 拿到就关掉回传，避免持续广播
+            prefs.edit().putBoolean(Config.KEY_CAPTURE, false).apply();
+            writeConfigFile(false);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,15 +97,37 @@ public class MainActivity extends Activity {
         etDevice = findViewById(R.id.et_device);
         tvDeviceSource = findViewById(R.id.tv_device_source);
         Button btnSave = findViewById(R.id.btn_save);
+        Button btnCapture = findViewById(R.id.btn_capture);
         TextView tvTip = findViewById(R.id.tv_tip);
 
         load();
         btnSave.setOnClickListener(v -> save());
+        btnCapture.setOnClickListener(v -> captureRealLocation());
         tvTip.setText(getString(R.string.tip));
+
+        registerCaptureReceiver();
 
         if (!hasPhonePermission()) {
             requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, REQ_PHONE);
         }
+    }
+
+    private void registerCaptureReceiver() {
+        IntentFilter filter = new IntentFilter(Config.ACTION_CAPTURE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(captureReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(captureReceiver, filter);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        try {
+            unregisterReceiver(captureReceiver);
+        } catch (Throwable ignored) {
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -168,6 +222,28 @@ public class MainActivity extends Activity {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    /** 让 ejia 把真实定位回传过来：置位请求 → 拉起 ejia → 等广播。 */
+    private void captureRealLocation() {
+        if (cbLocation.isChecked()) {
+            toast("请先取消勾选「启用定位伪造」，否则取到的是伪造值");
+            return;
+        }
+        prefs.edit()
+                .putBoolean(Config.KEY_CAPTURE, true)
+                .putLong(Config.KEY_CAPTURE_TS, System.currentTimeMillis())
+                .apply();
+        writeConfigFile(true);
+
+        Intent launch = getPackageManager().getLaunchIntentForPackage("com.dcits.ehome");
+        if (launch == null) {
+            toast("没找到「神州e家」");
+            return;
+        }
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(launch);
+        toast("已打开神州e家，等它读取定位后回到这里");
+    }
+
     private void save() {
         String latText = etLat.getText().toString().trim();
         String lngText = etLng.getText().toString().trim();
@@ -232,37 +308,39 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "")
                 .apply();
 
-        // 同时落一份到 /sdcard/Download/ejiahook.json：
-        // 被注入的 ejia 进程读这个文件最稳（Provider 在部分 ROM 上会被拦）
-        publishConfigFile(locationOn, lat, lng, radius,
-                etCity.getText().toString().trim(),
-                etAddress.getText().toString().trim(),
-                deviceOn, deviceId);
-
+        writeConfigFile(false);
         toast("已保存，约 2 秒内生效");
     }
 
-    private static final String PUBLIC_FILE_NAME = "ejiahook.json";
-
-    private void publishConfigFile(boolean locationOn, double lat, double lng, double radius,
-                                   String city, String address, boolean deviceOn, String deviceId) {
+    /** 把当前界面上的配置写到 /sdcard/Download/ejiahook.json（被注入的 ejia 进程读它）。 */
+    private void writeConfigFile(boolean capture) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return;
         }
         try {
+            boolean locationOn = cbLocation.isChecked();
             JSONObject json = new JSONObject();
             json.put(Config.KEY_ENABLED, locationOn);
-            json.put(Config.KEY_LAT, locationOn ? format(lat) : "");
-            json.put(Config.KEY_LNG, locationOn ? format(lng) : "");
-            json.put(Config.KEY_RADIUS, format(radius));
-            json.put(Config.KEY_CITY, city);
-            json.put(Config.KEY_ADDRESS, address);
+            json.put(Config.KEY_LAT, etLat.getText().toString().trim());
+            json.put(Config.KEY_LNG, etLng.getText().toString().trim());
+            json.put(Config.KEY_RADIUS, TextUtils.isEmpty(etRadius.getText().toString().trim())
+                    ? "5" : etRadius.getText().toString().trim());
+            json.put(Config.KEY_CITY, etCity.getText().toString().trim());
+            json.put(Config.KEY_ADDRESS, etAddress.getText().toString().trim());
+            boolean deviceOn = cbDevice.isChecked();
             json.put(Config.KEY_DEVICE_ENABLED, deviceOn);
-            json.put(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "");
-            // 保留调试开关（调试时用 root 改文件，别被 UI 覆盖掉）
+            json.put(Config.KEY_DEVICE_ID, deviceOn ? etDevice.getText().toString().trim() : "");
+            // 调试开关由 root 侧控制，UI 保存时保留原值
             json.put(Config.KEY_DEBUG, readDebugFlag());
-            byte[] data = json.toString().getBytes("UTF-8");
+            json.put(Config.KEY_CAPTURE, capture);
+            json.put(Config.KEY_CAPTURE_TS, capture ? System.currentTimeMillis() : 0);
+            writePublicFile(json.toString().getBytes("UTF-8"));
+        } catch (Throwable ignored) {
+        }
+    }
 
+    private void writePublicFile(byte[] data) {
+        try {
             ContentResolver cr = getContentResolver();
             Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
             long id = findPublicFileId(cr, collection);

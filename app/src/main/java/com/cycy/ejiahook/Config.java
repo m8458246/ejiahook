@@ -35,6 +35,8 @@ public final class Config {
     public static final String AUTHORITY = "com.cycy.ejiahook.config";
     public static final String PREFS = "config";
     public static final String METHOD_GET = "get";
+    /** 模块（ejia 进程内）回传真实定位的广播 */
+    public static final String ACTION_CAPTURE = "com.cycy.ejiahook.CAPTURE";
 
     public static final String KEY_ENABLED = "enabled";
     public static final String KEY_LAT = "lat";
@@ -45,6 +47,8 @@ public final class Config {
     public static final String KEY_DEVICE_ENABLED = "device_enabled";
     public static final String KEY_DEVICE_ID = "device_id";
     public static final String KEY_DEBUG = "debug";
+    public static final String KEY_CAPTURE = "capture";
+    public static final String KEY_CAPTURE_TS = "capture_ts";
 
     private static final String TAG = "EjiaHook";
     private static final long TTL_MS = 2000L;
@@ -78,6 +82,10 @@ public final class Config {
     public String deviceId = "";
     /** 调试日志开关 */
     public boolean debug;
+    /** 是否请求回传一次真实定位 */
+    public boolean capture;
+    /** 回传请求的时间戳（毫秒），过期作废 */
+    public long captureTs;
     /** 是否已有可用的目标坐标 */
     public boolean hasTarget;
 
@@ -224,6 +232,8 @@ public final class Config {
         c.deviceEnabled = getBool(map, KEY_DEVICE_ENABLED, false);
         c.deviceId = nullToEmpty(getStr(map, KEY_DEVICE_ID));
         c.debug = getBool(map, KEY_DEBUG, false);
+        c.capture = getBool(map, KEY_CAPTURE, false);
+        c.captureTs = (long) parseDouble(getStr(map, KEY_CAPTURE_TS), 0);
         c.hasTarget = (c.lat != 0 || c.lng != 0)
                 && c.lat >= -90 && c.lat <= 90
                 && c.lng >= -180 && c.lng <= 180;
@@ -256,7 +266,7 @@ public final class Config {
     }
 
     /** 在被注入的进程里拿 Application：优先 ActivityThread，兜底 AppGlobals。 */
-    private static Context appContext() {
+    static Context appContext() {
         try {
             Class<?> at = Class.forName("android.app.ActivityThread");
             Method m = at.getDeclaredMethod("currentApplication");

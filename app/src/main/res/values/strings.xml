@@ -16,10 +16,11 @@
     <string name="hint_radius">默认 5</string>
     <string name="hint_optional">不填则保留真实值</string>
     <string name="hint_device">例如 867500000000000</string>
+    <string name="capture">获取 ejia 当前真实定位</string>
     <string name="save">保存</string>
     <string name="device_source_real">当前为真实值（来源：%1$s）</string>
     <string name="device_source_custom">当前为自定义值，覆盖已启用</string>
     <string name="device_source_none">读不到真实值，请授予电话权限（仅用于显示）</string>
     <string name="device_source_grant">需要电话权限才能读取真实 IMEI，点这里授予</string>
-    <string name="tip">保存后约 2 秒内生效，无需重启「神州e家」。\n坐标使用百度 / 高德的 GCJ-02 火星坐标系，直接填地图上取到的点即可。\n设备标识默认透传真实值；覆盖会同时作用于 IMEI、IMSI、SIM 序列号、android_id、Build.getSerial（填 MAC 格式时也会替换 Wi-Fi MAC）。</string>
+    <string name="tip">保存后约 2 秒内生效，无需重启「神州e家」。\n坐标使用百度 / 高德的 GCJ-02 火星坐标系，直接填地图上取到的点即可。\n「获取 ejia 当前真实定位」会打开神州e家，等它读一次定位，把真实经纬度/城市/地址填回这里（需先取消勾选定位伪造）。\n设备标识默认透传真实值；覆盖会同时作用于 IMEI、IMSI、SIM 序列号、android_id、Build.getSerial（填 MAC 格式时也会替换 Wi-Fi MAC）。</string>
 </resources>

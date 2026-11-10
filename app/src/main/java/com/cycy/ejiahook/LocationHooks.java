@@ -1,5 +1,7 @@
 package com.cycy.ejiahook;
 
+import android.content.Context;
+import android.content.Intent;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -30,6 +32,14 @@ final class LocationHooks {
     private static final String TAG = "EjiaHook";
     private static final String BD_LOCATION = "com.baidu.location.BDLocation";
     private static final AtomicInteger sTrace = new AtomicInteger();
+
+    private static final long CAPTURE_TTL_MS = 5 * 60 * 1000L;
+
+    private static volatile double sRealLat = Double.NaN;
+    private static volatile double sRealLng = Double.NaN;
+    private static volatile String sRealCity = "";
+    private static volatile String sRealAddr = "";
+    private static volatile long sLastSent;
 
     private LocationHooks() {
     }
@@ -83,6 +93,14 @@ final class LocationHooks {
             module.hook(getter).intercept(chain -> {
                 Object raw = chain.proceed();
                 Config c = Config.get();
+                if (raw instanceof Number) {
+                    if (isLat) {
+                        sRealLat = ((Number) raw).doubleValue();
+                    } else {
+                        sRealLng = ((Number) raw).doubleValue();
+                    }
+                    maybeCapture(module, c);
+                }
                 if (!c.enabled || !c.hasTarget) {
                     return raw;
                 }
@@ -116,6 +134,14 @@ final class LocationHooks {
             module.hook(getter).intercept(chain -> {
                 Object result = chain.proceed();
                 Config c = Config.get();
+                if (result instanceof String) {
+                    if (isAddr) {
+                        sRealAddr = (String) result;
+                    } else {
+                        sRealCity = (String) result;
+                    }
+                    maybeCapture(module, c);
+                }
                 if (!c.enabled) {
                     return result;
                 }
@@ -132,6 +158,45 @@ final class LocationHooks {
             });
         } catch (Throwable t) {
             module.log(Log.ERROR, TAG, "hook BDLocation." + getter.getName() + " 失败: " + t);
+        }
+    }
+
+    /**
+     * 用户点了「获取 ejia 当前定位」时，把真实定位通过广播回传给模块 App。
+     * 只在没开启定位伪造时回传，避免把伪造值当成真实值。
+     */
+    private static void maybeCapture(XposedModule module, Config c) {
+        if (!c.capture || c.enabled) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (c.captureTs > 0 && now - c.captureTs > CAPTURE_TTL_MS) {
+            return;
+        }
+        if (Double.isNaN(sRealLat) || Double.isNaN(sRealLng)) {
+            return;
+        }
+        if (now - sLastSent < 2000) {
+            return;
+        }
+        sLastSent = now;
+        try {
+            Context ctx = Config.appContext();
+            if (ctx == null) {
+                return;
+            }
+            Intent intent = new Intent(Config.ACTION_CAPTURE);
+            intent.setPackage("com.cycy.ejiahook");
+            intent.putExtra("lat", sRealLat);
+            intent.putExtra("lng", sRealLng);
+            intent.putExtra("city", sRealCity);
+            intent.putExtra("address", sRealAddr);
+            intent.putExtra("ts", now);
+            ctx.sendBroadcast(intent);
+            module.log(Log.INFO, TAG, "已回传真实定位 " + sRealLat + "," + sRealLng
+                    + " city=" + sRealCity + " addr=" + sRealAddr);
+        } catch (Throwable t) {
+            module.log(Log.WARN, TAG, "回传真实定位失败: " + t);
         }
     }
 
