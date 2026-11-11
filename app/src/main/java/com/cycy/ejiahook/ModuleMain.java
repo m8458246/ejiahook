@@ -15,6 +15,7 @@ public class ModuleMain extends XposedModule {
     private static final String TAG = "EjiaHook";
     private static final String TARGET_PACKAGE = "com.dcits.ehome";
 
+    private static final Object LOCK = new Object();
     private static volatile boolean sInstalled;
 
     @Override
@@ -31,22 +32,43 @@ public class ModuleMain extends XposedModule {
         if (!TARGET_PACKAGE.equals(param.getPackageName())) {
             return;
         }
-        synchronized (ModuleMain.class) {
+        synchronized (LOCK) {
             if (sInstalled) {
                 return;
             }
-            sInstalled = true;
         }
         log(Log.INFO, TAG, "ejia 就绪，开始安装 hook");
+
+        ClassLoader cl = param.getClassLoader();
+        Config c = Config.get();
+
+        // 每一项单独 try/catch：一个 hook 失败不影响其它项，也方便定位是哪一项
+        step("定位", () -> LocationHooks.install(this, cl));
+        step("设备标识", () -> DeviceIdHooks.install(this));
+        step("调试", () -> DebugHooks.install(this, cl));
+        if (c.rootHook) {
+            step("root 检测", () -> RootHooks.install(this, cl));
+        } else {
+            log(Log.INFO, TAG, "root 检测 hook 已按配置跳过");
+        }
+        if (c.systemLocation) {
+            step("系统定位", () -> SystemLocationHooks.install(this));
+        } else {
+            log(Log.INFO, TAG, "系统定位 hook 已按配置跳过");
+        }
+
+        // 全部走完才置位：中途异常时下次 onPackageReady 还能重试
+        synchronized (LOCK) {
+            sInstalled = true;
+        }
+        log(Log.INFO, TAG, "hook 安装流程结束");
+    }
+
+    private void step(String name, Runnable action) {
         try {
-            ClassLoader cl = param.getClassLoader();
-            LocationHooks.install(this, cl);
-            DeviceIdHooks.install(this);
-            DebugHooks.install(this, cl);
-            RootHooks.install(this, cl);
-            SystemLocationHooks.install(this);
+            action.run();
         } catch (Throwable t) {
-            log(Log.ERROR, TAG, "安装 hook 异常", t);
+            log(Log.ERROR, TAG, name + " hook 安装异常", t);
         }
     }
 }

@@ -22,7 +22,7 @@
     <string name="hint_device">例如 867500000000000</string>
     <string name="capture">获取 ejia 当前真实定位</string>
     <string name="save">保存</string>
-    <string name="device_source_real">当前为真实值（来源：%1$s）</string>
+    <string name="device_source_real">当前为本机值（来源：%1$s）；目标 App 因签名不同，实际读到的可能不同</string>
     <string name="device_source_custom">当前为自定义值，覆盖已启用</string>
     <string name="device_source_none">读不到真实值，请授予电话权限（仅用于显示）</string>
     <string name="device_source_grant">需要电话权限才能读取真实 IMEI，点这里授予</string>

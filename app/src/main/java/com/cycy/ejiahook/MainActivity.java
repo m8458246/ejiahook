@@ -39,6 +39,7 @@ import java.io.OutputStream;
 public class MainActivity extends Activity {
 
     private static final int REQ_PHONE = 1001;
+    private static final long CAPTURE_TTL_MS = 5 * 60 * 1000L;
     private static final String PUBLIC_FILE_NAME = "config.json";
 
     private CheckBox cbLocation;
@@ -62,6 +63,23 @@ public class MainActivity extends Activity {
         public void onReceive(Context context, Intent intent) {
             if (!Config.ACTION_CAPTURE.equals(intent.getAction())) {
                 return;
+            }
+            // 只接受本次请求窗口内的回传，避免外部伪造的广播被当成真实定位
+            boolean requested = prefs.getBoolean(Config.KEY_CAPTURE, false);
+            long requestedAt = prefs.getLong(Config.KEY_CAPTURE_TS, 0);
+            if (!requested || requestedAt <= 0
+                    || System.currentTimeMillis() - requestedAt > CAPTURE_TTL_MS) {
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                int uid = getSentFromUid();
+                int target = targetUid();
+                // 两边都拿得到才校验；任何一边未知就退回上面的时间窗判断，避免误伤正常回传
+                if (uid != android.os.Process.INVALID_UID
+                        && target != android.os.Process.INVALID_UID
+                        && uid != target) {
+                    return;
+                }
             }
             double lat = intent.getDoubleExtra("lat", 0);
             double lng = intent.getDoubleExtra("lng", 0);
@@ -130,6 +148,15 @@ public class MainActivity extends Activity {
 
         if (!hasPhonePermission()) {
             requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, REQ_PHONE);
+        }
+    }
+
+    /** 目标应用（神州e家）的 uid，用于校验广播来源；拿不到时返回 INVALID_UID。 */
+    private int targetUid() {
+        try {
+            return getPackageManager().getPackageUid("com.dcits.ehome", 0);
+        } catch (Throwable t) {
+            return android.os.Process.INVALID_UID;
         }
     }
 
@@ -323,6 +350,11 @@ public class MainActivity extends Activity {
                 toast("纬度/经度格式不对");
                 return;
             }
+            // NaN / Infinity 用比较运算符判断不出来，必须单独拦
+            if (!Double.isFinite(lat) || !Double.isFinite(lng)) {
+                toast("纬度/经度必须是有限数字");
+                return;
+            }
             if (lat < -90 || lat > 90) {
                 toast("纬度需要在 -90 ~ 90 之间");
                 return;
@@ -339,6 +371,14 @@ public class MainActivity extends Activity {
                 radius = Double.parseDouble(radiusText);
             } catch (NumberFormatException e) {
                 toast("漂移半径格式不对");
+                return;
+            }
+            if (!Double.isFinite(radius)) {
+                toast("漂移半径必须是有限数字");
+                return;
+            }
+            if (radius > 5000) {
+                toast("漂移半径最大 5000 米");
                 return;
             }
             if (radius < 0) {
@@ -370,14 +410,22 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "")
                 .apply();
 
-        writeConfigFile(false);
-        toast("已保存，约 2 秒内生效");
+        boolean written = writeConfigFile(false);
+        if (written) {
+            toast("已保存，约 2 秒内生效");
+        } else {
+            toast("本地已保存，但共享配置写入失败；目标应用可能仍用旧配置");
+        }
     }
 
-    /** 把当前界面上的配置写到 /sdcard/Download/ejiahook.json（被注入的 ejia 进程读它）。 */
-    private void writeConfigFile(boolean capture) {
+    /**
+     * 把当前界面上的配置写到 /sdcard/Download/ejiahook/config.json（被注入的 ejia 进程读它）。
+     *
+     * @return true 表示确实写进去了；false 表示没写成功（调用方不能谎报“已生效”）
+     */
+    private boolean writeConfigFile(boolean capture) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return;
+            return false;
         }
         try {
             boolean locationOn = cbLocation.isChecked();
@@ -400,12 +448,13 @@ public class MainActivity extends Activity {
             json.put(Config.KEY_DEBUG, readDebugFlag());
             json.put(Config.KEY_CAPTURE, capture);
             json.put(Config.KEY_CAPTURE_TS, capture ? System.currentTimeMillis() : 0);
-            writePublicFile(json.toString().getBytes("UTF-8"));
-        } catch (Throwable ignored) {
+            return writePublicFile(json.toString().getBytes("UTF-8"));
+        } catch (Throwable t) {
+            return false;
         }
     }
 
-    private void writePublicFile(byte[] data) {
+    private boolean writePublicFile(byte[] data) {
         try {
             ContentResolver cr = getContentResolver();
             Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
@@ -413,26 +462,32 @@ public class MainActivity extends Activity {
             if (id >= 0) {
                 Uri uri = ContentUris.withAppendedId(collection, id);
                 try (OutputStream out = cr.openOutputStream(uri, "wt")) {
-                    if (out != null) {
-                        out.write(data);
+                    if (out == null) {
+                        return false;
                     }
+                    out.write(data);
                 }
+                return true;
             } else {
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.MediaColumns.DISPLAY_NAME, PUBLIC_FILE_NAME);
                 values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
                 values.put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath());
                 Uri uri = cr.insert(collection, values);
-                if (uri != null) {
-                    try (OutputStream out = cr.openOutputStream(uri)) {
-                        if (out != null) {
-                            out.write(data);
-                        }
-                    }
+                if (uri == null) {
+                    return false;
                 }
+                try (OutputStream out = cr.openOutputStream(uri)) {
+                    if (out == null) {
+                        return false;
+                    }
+                    out.write(data);
+                }
+                return true;
             }
         } catch (Throwable ignored) {
         }
+        return false;
     }
 
     private static String relativePath() {

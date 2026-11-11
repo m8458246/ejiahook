@@ -52,6 +52,7 @@ public final class Config {
     public static final String KEY_DEVICE_ID = "device_id";
     public static final String KEY_DEBUG = "debug";
     public static final String KEY_SYSTEM_LOCATION = "system_location";
+    public static final String KEY_ROOT_HOOK = "root_hook";
     public static final String KEY_CAPTURE = "capture";
     public static final String KEY_CAPTURE_TS = "capture_ts";
 
@@ -97,6 +98,8 @@ public final class Config {
     public boolean debug;
     /** 是否同时伪造系统定位（android.location.Location） */
     public boolean systemLocation = true;
+    /** 是否把 root 检测固定成 false */
+    public boolean rootHook = true;
     /** 是否请求回传一次真实定位 */
     public boolean capture;
     /** 回传请求的时间戳（毫秒），过期作废 */
@@ -264,8 +267,10 @@ public final class Config {
         c.radius = parseDouble(getStr(map, KEY_RADIUS), 10.0);
         if (c.radius < 0) c.radius = 0;
         if (c.radius > 5000) c.radius = 5000;
-        c.lat = parseDouble(getStr(map, KEY_LAT), 0);
-        c.lng = parseDouble(getStr(map, KEY_LNG), 0);
+        String latText = getStr(map, KEY_LAT);
+        String lngText = getStr(map, KEY_LNG);
+        c.lat = parseDouble(latText, 0);
+        c.lng = parseDouble(lngText, 0);
         c.detail = nullToEmpty(getStr(map, KEY_DETAIL));
         c.city = nullToEmpty(getStr(map, KEY_CITY));
         c.province = nullToEmpty(getStr(map, KEY_PROVINCE));
@@ -275,11 +280,14 @@ public final class Config {
         c.deviceId = nullToEmpty(getStr(map, KEY_DEVICE_ID));
         c.debug = getBool(map, KEY_DEBUG, false);
         c.systemLocation = getBool(map, KEY_SYSTEM_LOCATION, true);
+        c.rootHook = getBool(map, KEY_ROOT_HOOK, true);
         c.capture = getBool(map, KEY_CAPTURE, false);
         c.captureTs = (long) parseDouble(getStr(map, KEY_CAPTURE_TS), 0);
-        c.hasTarget = (c.lat != 0 || c.lng != 0)
-                && c.lat >= -90 && c.lat <= 90
-                && c.lng >= -180 && c.lng <= 180;
+        // 用“字段是否填写 + 数值是否合法”判断，而不是拿 (0,0) 当“未设置”的哨兵
+        // ——(0,0) 本身是合法坐标，不能因为填了赤道/本初子午线就当成没填
+        boolean latOk = !isEmpty(latText) && c.lat >= -90 && c.lat <= 90;
+        boolean lngOk = !isEmpty(lngText) && c.lng >= -180 && c.lng <= 180;
+        c.hasTarget = latOk && lngOk;
         return c;
     }
 
@@ -302,10 +310,16 @@ public final class Config {
     static double parseDouble(String s, double def) {
         if (s == null || s.trim().isEmpty()) return def;
         try {
-            return Double.parseDouble(s.trim());
+            double v = Double.parseDouble(s.trim());
+            // NaN / Infinity 会让后续比较全部失效，直接当没填
+            return Double.isFinite(v) ? v : def;
         } catch (NumberFormatException e) {
             return def;
         }
+    }
+
+    static boolean isEmpty(String s) {
+        return s == null || s.trim().isEmpty();
     }
 
     /** 在被注入的进程里拿 Application：优先 ActivityThread，兜底 AppGlobals。 */

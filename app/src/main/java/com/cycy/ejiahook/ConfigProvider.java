@@ -28,6 +28,10 @@ public class ConfigProvider extends ContentProvider {
         if (!Config.METHOD_GET.equals(method)) {
             return null;
         }
+        // 只允许本应用和目标应用读取，避免任意第三方应用拿走坐标/设备标识
+        if (!isTrustedCaller()) {
+            return null;
+        }
         Context ctx = getContext();
         if (ctx == null) {
             return null;
@@ -53,6 +57,31 @@ public class ConfigProvider extends ContentProvider {
         } catch (Throwable ignored) {
         }
         return out;
+    }
+
+    private static final String TARGET_PACKAGE = "com.dcits.ehome";
+
+    private boolean isTrustedCaller() {
+        try {
+            int uid = android.os.Binder.getCallingUid();
+            if (uid == android.os.Process.myUid()) {
+                return true;
+            }
+            Context ctx = getContext();
+            if (ctx == null) {
+                return false;
+            }
+            String[] packages = ctx.getPackageManager().getPackagesForUid(uid);
+            if (packages != null) {
+                for (String pkg : packages) {
+                    if (TARGET_PACKAGE.equals(pkg)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
     @Override

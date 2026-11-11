@@ -6,6 +6,7 @@ import android.util.Log;
 
 import java.lang.reflect.Method;
 import java.util.Locale;
+import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.libxposed.api.XposedModule;
@@ -36,13 +37,18 @@ final class LocationHooks {
     /** 回传真实定位用的广播（模块 App 侧接收后填进输入框） */
     private static final long CAPTURE_TTL_MS = 5 * 60 * 1000L;
 
-    private static volatile double sRealLat = Double.NaN;
-    private static volatile double sRealLng = Double.NaN;
-    private static volatile String sRealCity = "";
-    private static volatile String sRealProvince = "";
-    private static volatile String sRealDistrict = "";
-    private static volatile String sRealStreet = "";
-    private static volatile String sRealAddr = "";
+    /** 被我们写回过的对象：里面的值已经是伪造的，不能当真实值采集 */
+    private static final WeakHashMap<Object, Boolean> sWritten = new WeakHashMap<>();
+
+    /** 采集绑定到单个 BDLocation 实例，避免把不同事件的经纬度/地址拼在一起 */
+    private static volatile Object sCaptureObj;
+    private static volatile double sCapLat = Double.NaN;
+    private static volatile double sCapLng = Double.NaN;
+    private static volatile String sCapProvince = "";
+    private static volatile String sCapCity = "";
+    private static volatile String sCapDistrict = "";
+    private static volatile String sCapStreet = "";
+    private static volatile String sCapAddr = "";
     private static volatile long sLastSent;
 
     private LocationHooks() {
@@ -61,6 +67,11 @@ final class LocationHooks {
         Method getLng = find(cls, "Q");
         if (getLat == null || getLng == null) {
             module.log(Log.ERROR, TAG, "BDLocation.K()/Q() 签名不符（APK 可能已更新），定位 hook 未安装");
+            return;
+        }
+        // 只检查名字和参数还不够，返回类型不对说明映射变了
+        if (getLat.getReturnType() != double.class || getLng.getReturnType() != double.class) {
+            module.log(Log.ERROR, TAG, "BDLocation.K()/Q() 返回类型不是 double，映射可能已变化，定位 hook 未安装");
             return;
         }
 
@@ -99,21 +110,16 @@ final class LocationHooks {
             module.hook(getter).intercept(chain -> {
                 Object raw = chain.proceed();
                 Config c = Config.get();
-                if (raw instanceof Number) {
-                    if (isLat) {
-                        sRealLat = ((Number) raw).doubleValue();
-                    } else {
-                        sRealLng = ((Number) raw).doubleValue();
-                    }
-                    maybeCapture(module, c);
-                }
-                if (!c.enabled || !c.hasTarget) {
-                    return raw;
-                }
                 Object self = chain.getThisObject();
-                if (self == null) {
+
+                if (!c.enabled && raw instanceof Number && self != null) {
+                    // 关闭伪造时才采集真实值，且绑定到同一个对象
+                    noteCaptureCoord(self, isLat, ((Number) raw).doubleValue(), c, module);
+                }
+                if (!c.enabled || !c.hasTarget || self == null) {
                     return raw;
                 }
+
                 Drift.Target target = Drift.targetFor(self, c);
                 if (setLat != null && setLng != null) {
                     // 幂等写入：即使 SDK 之后又用真实值覆盖了，下次读取也会重新纠正
@@ -123,6 +129,10 @@ final class LocationHooks {
                     } catch (Throwable ignored) {
                     }
                 }
+                synchronized (sWritten) {
+                    sWritten.put(self, Boolean.TRUE);
+                }
+
                 double offset = Drift.meters(c, target.lat, target.lng);
                 if (target.fresh) {
                     // 每次新定位只记一行
@@ -147,26 +157,18 @@ final class LocationHooks {
             module.log(Log.WARN, TAG, "BDLocation." + name + "() 未找到，" + label + "覆盖不可用");
             return;
         }
-        final boolean isAddr = "d".equals(name);
-        final boolean isCity = "i".equals(name);
+        if (getter.getReturnType() != String.class) {
+            module.log(Log.WARN, TAG, "BDLocation." + name + "() 返回类型不是 String，跳过" + label);
+            return;
+        }
         try {
             module.hook(getter).intercept(chain -> {
                 Object result = chain.proceed();
                 Config c = Config.get();
-                if (result instanceof String) {
-                    String text = (String) result;
-                    if (isAddr) {
-                        sRealAddr = text;
-                    } else if (isCity) {
-                        sRealCity = text;
-                    } else if ("c0".equals(name)) {
-                        sRealProvince = text;
-                    } else if ("r".equals(name)) {
-                        sRealDistrict = text;
-                    } else if ("k0".equals(name)) {
-                        sRealStreet = text;
-                    }
-                    maybeCapture(module, c);
+                Object self = chain.getThisObject();
+
+                if (!c.enabled && result instanceof String && self != null) {
+                    noteCaptureText(self, name, (String) result, c, module);
                 }
                 if (!c.enabled) {
                     return result;
@@ -187,19 +189,93 @@ final class LocationHooks {
         }
     }
 
+    // ---------------------------------------------------------------- 采集
+
+    private static void noteCaptureCoord(Object self, boolean isLat, double value,
+                                         Config c, XposedModule module) {
+        if (!c.capture) {
+            return;
+        }
+        if (isWritten(self)) {
+            return;
+        }
+        if (self != sCaptureObj) {
+            sCaptureObj = self;
+            sCapLat = Double.NaN;
+            sCapLng = Double.NaN;
+            sCapProvince = "";
+            sCapCity = "";
+            sCapDistrict = "";
+            sCapStreet = "";
+            sCapAddr = "";
+        }
+        if (isLat) {
+            sCapLat = value;
+        } else {
+            sCapLng = value;
+        }
+        trySendCapture(c, module);
+    }
+
+    private static void noteCaptureText(Object self, String name, String value,
+                                        Config c, XposedModule module) {
+        if (!c.capture) {
+            return;
+        }
+        if (isWritten(self)) {
+            return;
+        }
+        if (self != sCaptureObj) {
+            sCaptureObj = self;
+            sCapLat = Double.NaN;
+            sCapLng = Double.NaN;
+            sCapProvince = "";
+            sCapCity = "";
+            sCapDistrict = "";
+            sCapStreet = "";
+            sCapAddr = "";
+        }
+        switch (name) {
+            case "d":
+                sCapAddr = value;
+                break;
+            case "i":
+                sCapCity = value;
+                break;
+            case "c0":
+                sCapProvince = value;
+                break;
+            case "r":
+                sCapDistrict = value;
+                break;
+            case "k0":
+                sCapStreet = value;
+                break;
+            default:
+                break;
+        }
+        trySendCapture(c, module);
+    }
+
+    private static boolean isWritten(Object self) {
+        synchronized (sWritten) {
+            return sWritten.containsKey(self);
+        }
+    }
+
     /**
      * 用户点了「获取 ejia 当前定位」时，把真实定位通过广播回传给模块 App。
      * 只在没开启定位伪造时回传，避免把伪造值当成真实值。
      */
-    private static void maybeCapture(XposedModule module, Config c) {
-        if (!c.capture || c.enabled) {
+    private static void trySendCapture(Config c, XposedModule module) {
+        if (!c.capture) {
             return;
         }
         long now = System.currentTimeMillis();
         if (c.captureTs > 0 && now - c.captureTs > CAPTURE_TTL_MS) {
             return;
         }
-        if (Double.isNaN(sRealLat) || Double.isNaN(sRealLng)) {
+        if (Double.isNaN(sCapLat) || Double.isNaN(sCapLng)) {
             return;
         }
         if (now - sLastSent < 2000) {
@@ -213,17 +289,17 @@ final class LocationHooks {
             }
             Intent intent = new Intent(Config.ACTION_CAPTURE);
             intent.setPackage("com.cycy.ejiahook");
-            intent.putExtra("lat", sRealLat);
-            intent.putExtra("lng", sRealLng);
-            intent.putExtra("city", sRealCity);
-            intent.putExtra("province", sRealProvince);
-            intent.putExtra("district", sRealDistrict);
-            intent.putExtra("street", sRealStreet);
-            intent.putExtra("address", sRealAddr);
+            intent.putExtra("lat", sCapLat);
+            intent.putExtra("lng", sCapLng);
+            intent.putExtra("city", sCapCity);
+            intent.putExtra("province", sCapProvince);
+            intent.putExtra("district", sCapDistrict);
+            intent.putExtra("street", sCapStreet);
+            intent.putExtra("address", sCapAddr);
             intent.putExtra("ts", now);
             ctx.sendBroadcast(intent);
-            module.log(Log.INFO, TAG, "已回传真实定位 " + sRealLat + "," + sRealLng
-                    + " city=" + sRealCity + " addr=" + sRealAddr);
+            module.log(Log.INFO, TAG, "已回传真实定位 " + sCapLat + "," + sCapLng
+                    + " city=" + sCapCity + " addr=" + sCapAddr);
         } catch (Throwable t) {
             module.log(Log.WARN, TAG, "回传真实定位失败: " + t);
         }
