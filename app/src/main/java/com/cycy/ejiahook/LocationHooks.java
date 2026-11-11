@@ -275,7 +275,8 @@ final class LocationHooks {
             return;
         }
         long now = System.currentTimeMillis();
-        if (c.captureTs > 0 && now - c.captureTs > CAPTURE_TTL_MS) {
+        // 没有请求时间戳（或已过期）就不发，避免配置里残留 capture=true 时一直回传
+        if (c.captureTs <= 0 || now - c.captureTs > CAPTURE_TTL_MS) {
             return;
         }
         if (Double.isNaN(sCapLat) || Double.isNaN(sCapLng)) {
@@ -306,7 +307,8 @@ final class LocationHooks {
             intent.putExtra("ts", now);
             ctx.sendBroadcast(intent);
             module.log(Log.INFO, TAG, "已回传真实定位 " + sCapLat + "," + sCapLng
-                    + " city=" + sCapCity + " addr=" + sCapAddr);
+                    + " " + sCapProvince + "/" + sCapCity + "/" + sCapDistrict
+                    + "/" + sCapStreet + " addr=" + sCapAddr);
         } catch (Throwable t) {
             module.log(Log.WARN, TAG, "回传真实定位失败: " + t);
         }
