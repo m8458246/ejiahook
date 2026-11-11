@@ -8,11 +8,11 @@
     <string name="lat">纬度（GCJ-02）</string>
     <string name="lng">经度（GCJ-02）</string>
     <string name="radius">漂移半径（米，0 表示固定不动）</string>
-    <string name="city">城市（可选覆盖）</string>
-    <string name="address">完整地址（可选覆盖）</string>
-    <string name="province">省（可选覆盖，H5 拼地址用）</string>
-    <string name="district">区（可选覆盖）</string>
-    <string name="street">街道（可选覆盖）</string>
+    <string name="city">市</string>
+    <string name="detail">详细地址（可选，拼在街道后面；省市区街道留空则用真实值）</string>
+    <string name="province">省</string>
+    <string name="district">区</string>
+    <string name="street">街道</string>
     <string name="device_id">标识值（不勾选覆盖时显示真实值，可直接复制）</string>
     <string name="hint_lat">例如 39.908722</string>
     <string name="hint_lng">例如 116.397499</string>

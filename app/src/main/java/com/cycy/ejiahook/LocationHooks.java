@@ -71,13 +71,19 @@ final class LocationHooks {
         hookCoord(module, getLat, true, setLat, setLng);
         hookCoord(module, getLng, false, setLat, setLng);
 
-        hookText(module, cls, "d", "地址", c -> c.address);
+        hookText(module, cls, "d", "地址", LocationHooks::fullAddress);
         hookText(module, cls, "i", "城市", c -> c.city);
         hookText(module, cls, "c0", "省", c -> c.province);
         hookText(module, cls, "r", "区", c -> c.district);
         hookText(module, cls, "k0", "街道", c -> c.street);
 
         module.log(Log.INFO, TAG, "定位 hook 安装完成（writeBack=" + canWriteBack + "）");
+    }
+
+    /** 完整地址 = 省+市+区+街道+详细地址；都为空则不覆盖，保留百度原始值。 */
+    private static String fullAddress(Config c) {
+        String composed = c.province + c.city + c.district + c.street + c.detail;
+        return composed.trim().isEmpty() ? "" : composed;
     }
 
     private interface Override {

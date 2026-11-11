@@ -43,6 +43,7 @@ public final class Config {
     public static final String KEY_LNG = "lng";
     public static final String KEY_RADIUS = "radius";
     public static final String KEY_ADDRESS = "address";
+    public static final String KEY_DETAIL = "detail";
     public static final String KEY_CITY = "city";
     public static final String KEY_PROVINCE = "province";
     public static final String KEY_DISTRICT = "district";
@@ -75,8 +76,8 @@ public final class Config {
     public double lng;
     /** 漂移半径，单位米 */
     public double radius;
-    /** 地址覆盖，空串表示不覆盖 */
-    public String address = "";
+    /** 详细地址（门牌/楼名），拼在省市区街道后面 */
+    public String detail = "";
     /** 城市覆盖，空串表示不覆盖 */
     public String city = "";
     /** 省覆盖 */
@@ -122,7 +123,7 @@ public final class Config {
     /** 缓存键：配置变化后，同一个 BDLocation 实例的漂移量需要重算。 */
     public String signature() {
         return String.format(Locale.US, "%b|%.7f|%.7f|%.2f|%s|%s|%s|%s|%s",
-                enabled, lat, lng, radius, address, city, province, district, street);
+                enabled, lat, lng, radius, detail, city, province, district, street);
     }
 
     private static Config load() {
@@ -256,7 +257,7 @@ public final class Config {
         if (c.radius > 5000) c.radius = 5000;
         c.lat = parseDouble(getStr(map, KEY_LAT), 0);
         c.lng = parseDouble(getStr(map, KEY_LNG), 0);
-        c.address = nullToEmpty(getStr(map, KEY_ADDRESS));
+        c.detail = nullToEmpty(getStr(map, KEY_DETAIL));
         c.city = nullToEmpty(getStr(map, KEY_CITY));
         c.province = nullToEmpty(getStr(map, KEY_PROVINCE));
         c.district = nullToEmpty(getStr(map, KEY_DISTRICT));

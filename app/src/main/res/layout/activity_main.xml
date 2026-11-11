@@ -132,11 +132,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/address"
+            android:text="@string/detail"
             android:textSize="14sp" />
 
         <EditText
-            android:id="@+id/et_address"
+            android:id="@+id/et_detail"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/hint_optional"

@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
     private EditText etProvince;
     private EditText etDistrict;
     private EditText etStreet;
-    private EditText etAddress;
+    private EditText etDetail;
     private EditText etDevice;
     private TextView tvDeviceSource;
 
@@ -74,9 +74,7 @@ public class MainActivity extends Activity {
             if (!TextUtils.isEmpty(city)) {
                 etCity.setText(city);
             }
-            if (!TextUtils.isEmpty(address)) {
-                etAddress.setText(address);
-            }
+            // 地址不自动填：省/市/区/街道留空时本来就保留真实值，不需要手抄
             toast("已填入真实定位，可按需微调后保存");
             // 拿到就关掉回传，避免持续广播
             prefs.edit().putBoolean(Config.KEY_CAPTURE, false).apply();
@@ -99,7 +97,7 @@ public class MainActivity extends Activity {
         etProvince = findViewById(R.id.et_province);
         etDistrict = findViewById(R.id.et_district);
         etStreet = findViewById(R.id.et_street);
-        etAddress = findViewById(R.id.et_address);
+        etDetail = findViewById(R.id.et_detail);
         etDevice = findViewById(R.id.et_device);
         tvDeviceSource = findViewById(R.id.tv_device_source);
         Button btnSave = findViewById(R.id.btn_save);
@@ -160,7 +158,7 @@ public class MainActivity extends Activity {
         etProvince.setText(prefs.getString(Config.KEY_PROVINCE, ""));
         etDistrict.setText(prefs.getString(Config.KEY_DISTRICT, ""));
         etStreet.setText(prefs.getString(Config.KEY_STREET, ""));
-        etAddress.setText(prefs.getString(Config.KEY_ADDRESS, ""));
+        etDetail.setText(prefs.getString(Config.KEY_DETAIL, ""));
     }
 
     /**
@@ -325,7 +323,7 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_PROVINCE, etProvince.getText().toString().trim())
                 .putString(Config.KEY_DISTRICT, etDistrict.getText().toString().trim())
                 .putString(Config.KEY_STREET, etStreet.getText().toString().trim())
-                .putString(Config.KEY_ADDRESS, etAddress.getText().toString().trim())
+                .putString(Config.KEY_DETAIL, etDetail.getText().toString().trim())
                 .putBoolean(Config.KEY_DEVICE_ENABLED, deviceOn)
                 // 未启用覆盖时不保存显示出来的真实值，避免把真实标识写进配置
                 .putString(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "")
@@ -352,7 +350,7 @@ public class MainActivity extends Activity {
             json.put(Config.KEY_PROVINCE, etProvince.getText().toString().trim());
             json.put(Config.KEY_DISTRICT, etDistrict.getText().toString().trim());
             json.put(Config.KEY_STREET, etStreet.getText().toString().trim());
-            json.put(Config.KEY_ADDRESS, etAddress.getText().toString().trim());
+            json.put(Config.KEY_DETAIL, etDetail.getText().toString().trim());
             boolean deviceOn = cbDevice.isChecked();
             json.put(Config.KEY_DEVICE_ENABLED, deviceOn);
             json.put(Config.KEY_DEVICE_ID, deviceOn ? etDevice.getText().toString().trim() : "");
