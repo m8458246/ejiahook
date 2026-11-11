@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
     private CheckBox cbLocation;
     private CheckBox cbDevice;
     private CheckBox cbSystemLocation;
+    private CheckBox cbRootHook;
     private EditText etLat;
     private EditText etLng;
     private EditText etRadius;
@@ -81,16 +82,22 @@ public class MainActivity extends Activity {
                     return;
                 }
             }
-            double lat = intent.getDoubleExtra("lat", 0);
-            double lng = intent.getDoubleExtra("lng", 0);
+            // (0,0) 是合法的地理坐标，不能用“值等于 0”判断字段缺失；
+            // 只有字段不存在或数值不合法才丢弃
+            if (!intent.hasExtra("lat") || !intent.hasExtra("lng")) {
+                return;
+            }
+            double lat = intent.getDoubleExtra("lat", Double.NaN);
+            double lng = intent.getDoubleExtra("lng", Double.NaN);
+            if (!Double.isFinite(lat) || !Double.isFinite(lng)
+                    || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                return;
+            }
             String city = intent.getStringExtra("city");
             String province = intent.getStringExtra("province");
             String district = intent.getStringExtra("district");
             String street = intent.getStringExtra("street");
             String address = intent.getStringExtra("address");
-            if (lat == 0 && lng == 0) {
-                return;
-            }
             etLat.setText(format(lat));
             etLng.setText(format(lng));
             if (!TextUtils.isEmpty(city)) {
@@ -125,6 +132,7 @@ public class MainActivity extends Activity {
         cbLocation = findViewById(R.id.cb_location);
         cbDevice = findViewById(R.id.cb_device);
         cbSystemLocation = findViewById(R.id.cb_system_location);
+        cbRootHook = findViewById(R.id.cb_root_hook);
         etLat = findViewById(R.id.et_lat);
         etLng = findViewById(R.id.et_lng);
         etRadius = findViewById(R.id.et_radius);
@@ -218,6 +226,9 @@ public class MainActivity extends Activity {
         cbLocation.setChecked(prefs.getBoolean(Config.KEY_ENABLED, false));
         cbDevice.setChecked(prefs.getBoolean(Config.KEY_DEVICE_ENABLED, false));
         cbSystemLocation.setChecked(prefs.getBoolean(Config.KEY_SYSTEM_LOCATION, true));
+        // root 检测加固默认保持开启（关闭会让目标 App 可能识别到 root 并触发风控），
+        // 只有用户明确取消勾选才不安装
+        cbRootHook.setChecked(prefs.getBoolean(Config.KEY_ROOT_HOOK, true));
         etLat.setText(prefs.getString(Config.KEY_LAT, ""));
         etLng.setText(prefs.getString(Config.KEY_LNG, ""));
         etRadius.setText(prefs.getString(Config.KEY_RADIUS, "10"));
@@ -405,6 +416,7 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_STREET, etStreet.getText().toString().trim())
                 .putString(Config.KEY_DETAIL, etDetail.getText().toString().trim())
                 .putBoolean(Config.KEY_SYSTEM_LOCATION, cbSystemLocation.isChecked())
+                .putBoolean(Config.KEY_ROOT_HOOK, cbRootHook.isChecked())
                 .putBoolean(Config.KEY_DEVICE_ENABLED, deviceOn)
                 // 未启用覆盖时不保存显示出来的真实值，避免把真实标识写进配置
                 .putString(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "")
@@ -412,9 +424,13 @@ public class MainActivity extends Activity {
 
         boolean written = writeConfigFile(false);
         if (written) {
-            toast("已保存，约 2 秒内生效");
+            toast("已保存：本地 + 共享配置，约 2 秒内生效");
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            // Android 10 以下没有 MediaStore 公共文件通道，配置走框架 prefs，
+            // 这里不能报“写入失败”让用户以为没保存
+            toast("已保存到模块配置（Android 10 以下无共享文件通道，经框架通道生效）");
         } else {
-            toast("本地已保存，但共享配置写入失败；目标应用可能仍用旧配置");
+            toast("已保存到模块配置；共享文件写入失败，目标端可能读不到新配置");
         }
     }
 
@@ -431,8 +447,9 @@ public class MainActivity extends Activity {
             boolean locationOn = cbLocation.isChecked();
             JSONObject json = new JSONObject();
             json.put(Config.KEY_ENABLED, locationOn);
-            json.put(Config.KEY_LAT, etLat.getText().toString().trim());
-            json.put(Config.KEY_LNG, etLng.getText().toString().trim());
+            // 与 prefs 保持一致：没启用定位时不把界面上的残留坐标写进公共配置
+            json.put(Config.KEY_LAT, locationOn ? etLat.getText().toString().trim() : "");
+            json.put(Config.KEY_LNG, locationOn ? etLng.getText().toString().trim() : "");
             json.put(Config.KEY_RADIUS, TextUtils.isEmpty(etRadius.getText().toString().trim())
                     ? "10" : etRadius.getText().toString().trim());
             json.put(Config.KEY_CITY, etCity.getText().toString().trim());
@@ -442,6 +459,7 @@ public class MainActivity extends Activity {
             json.put(Config.KEY_DETAIL, etDetail.getText().toString().trim());
             boolean deviceOn = cbDevice.isChecked();
             json.put(Config.KEY_SYSTEM_LOCATION, cbSystemLocation.isChecked());
+            json.put(Config.KEY_ROOT_HOOK, cbRootHook.isChecked());
             json.put(Config.KEY_DEVICE_ENABLED, deviceOn);
             json.put(Config.KEY_DEVICE_ID, deviceOn ? etDevice.getText().toString().trim() : "");
             // 调试开关由 root 侧控制，UI 保存时保留原值
@@ -514,7 +532,10 @@ public class MainActivity extends Activity {
                 while (cursor.moveToNext()) {
                     String path = cursor.getString(1);
                     long id = cursor.getLong(0);
-                    boolean inSubdir = path != null && path.contains(Config.DOWNLOAD_SUBDIR);
+                    // 按目录段精确匹配，避免把 ejiahook2/ 之类的目录也算进来
+                    boolean inSubdir = path != null
+                            && ("/" + path.replace('\\', '/') + "/")
+                            .contains("/" + Config.DOWNLOAD_SUBDIR + "/");
                     if (inSubdir == requireSubdir) {
                         return id;
                     }

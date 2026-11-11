@@ -5,6 +5,7 @@
     <string name="section_device">设备标识</string>
     <string name="enable_location">启用定位伪造</string>
     <string name="enable_system_location">同时伪造系统定位（兜底，防止其它 SDK 拿到真实坐标）</string>
+    <string name="enable_root_hook">屏蔽 root 检测（默认开；关闭后需重启「神州e家」才生效）</string>
     <string name="enable_device">启用设备标识覆盖</string>
     <string name="lat">纬度（GCJ-02）</string>
     <string name="lng">经度（GCJ-02）</string>
@@ -26,5 +27,5 @@
     <string name="device_source_custom">当前为自定义值，覆盖已启用</string>
     <string name="device_source_none">读不到真实值，请授予电话权限（仅用于显示）</string>
     <string name="device_source_grant">需要电话权限才能读取真实 IMEI，点这里授予</string>
-    <string name="tip">保存后约 2 秒内生效，无需重启「神州e家」。\n坐标使用百度 / 高德的 GCJ-02 火星坐标系，直接填地图上取到的点即可。\n「获取 ejia 当前真实定位」会打开神州e家，等它读一次定位，把真实经纬度/城市/地址填回这里（需先取消勾选定位伪造）。\n设备标识默认透传真实值；覆盖会同时作用于 IMEI、IMSI、SIM 序列号、android_id、Build.getSerial（填 MAC 格式时也会替换 Wi-Fi MAC）。</string>
+    <string name="tip">保存后约 2 秒内生效，无需重启「神州e家」。\n坐标使用百度 / 高德的 GCJ-02 火星坐标系，直接填地图上取到的点即可。\n「获取 ejia 当前真实定位」会打开神州e家，等它读一次定位，把真实经纬度/城市/地址填回这里（需先取消勾选定位伪造）。\n设备标识默认透传真实值；覆盖会同时作用于 IMEI、IMSI、SIM 序列号、android_id、Build.getSerial（填 MAC 格式时也会替换 Wi-Fi MAC）。\n「屏蔽 root 检测」默认开启，改完需重启一次「神州e家」；其余开关约 2 秒内生效。</string>
 </resources>

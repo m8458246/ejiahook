@@ -40,8 +40,9 @@ final class LocationHooks {
     /** 被我们写回过的对象：里面的值已经是伪造的，不能当真实值采集 */
     private static final WeakHashMap<Object, Boolean> sWritten = new WeakHashMap<>();
 
-    /** 采集绑定到单个 BDLocation 实例，避免把不同事件的经纬度/地址拼在一起 */
-    private static volatile Object sCaptureObj;
+    /** 采集绑定到单个 BDLocation 实例，避免把不同事件的经纬度/地址拼在一起。
+     *  用弱引用持有：对象回收后下次自然重新绑定，不会把最后一个实例一直吊在静态字段里。 */
+    private static volatile java.lang.ref.WeakReference<Object> sCaptureObj;
     private static volatile double sCapLat = Double.NaN;
     private static volatile double sCapLng = Double.NaN;
     private static volatile String sCapProvince = "";
@@ -200,8 +201,8 @@ final class LocationHooks {
         if (isWritten(self)) {
             return;
         }
-        if (self != sCaptureObj) {
-            sCaptureObj = self;
+        if (sCaptureObj == null || sCaptureObj.get() != self) {
+            sCaptureObj = new java.lang.ref.WeakReference<>(self);
             sCapLat = Double.NaN;
             sCapLng = Double.NaN;
             sCapProvince = "";
@@ -227,8 +228,8 @@ final class LocationHooks {
         if (isWritten(self)) {
             return;
         }
-        if (self != sCaptureObj) {
-            sCaptureObj = self;
+        if (sCaptureObj == null || sCaptureObj.get() != self) {
+            sCaptureObj = new java.lang.ref.WeakReference<>(self);
             sCapLat = Double.NaN;
             sCapLng = Double.NaN;
             sCapProvince = "";

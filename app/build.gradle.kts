@@ -10,8 +10,8 @@ android {
         applicationId = "com.cycy.ejiahook"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     // 固定签名，保证每次 CI 出的包能覆盖安装（debug keystore 每次 runner 都不同）

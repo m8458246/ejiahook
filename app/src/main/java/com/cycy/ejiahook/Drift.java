@@ -57,7 +57,13 @@ final class Drift {
             }
             double[] p = compute(c);
             if (CACHE.size() > MAX_ENTRIES) {
-                CACHE.clear();
+                // 只淘汰一个最老的条目，不能整体 clear：还活着的 BDLocation 对象
+                // 如果被清掉，同一次定位里再读经纬度就会拿到新的随机点，坐标会抖
+                java.util.Iterator<Object> it = CACHE.keySet().iterator();
+                if (it.hasNext()) {
+                    it.next();
+                    it.remove();
+                }
             }
             CACHE.put(key, new Entry(sig, p[0], p[1]));
             return new Target(p[0], p[1], true);
@@ -71,7 +77,8 @@ final class Drift {
         return Math.sqrt(dLat * dLat + dLng * dLng);
     }
 
-    private static double[] compute(Config c) {        double radius = c.radius;
+    private static double[] compute(Config c) {
+        double radius = c.radius;
         if (radius <= 0) {
             return new double[]{c.lat, c.lng};
         }

@@ -71,6 +71,12 @@ public final class Config {
     private static volatile long sCacheAt;
     private static volatile String sChannel;
     private static volatile boolean sWarned;
+    private static volatile Context sAppCtx;
+
+    /** 旧版散落文件的目录扫描结果缓存：避免每 2 秒在 hook 线程上枚举整个 Download */
+    private static volatile java.util.List<File> sLegacyCache;
+    private static volatile long sLegacyAt;
+    private static final long LEGACY_SCAN_MS = 30000L;
 
     /** 定位伪造开关 */
     public boolean enabled;
@@ -107,6 +113,9 @@ public final class Config {
     /** 是否已有可用的目标坐标 */
     public boolean hasTarget;
 
+    /** signature() 的懒计算结果；Config 构造完成后字段不再变化 */
+    private volatile String sig;
+
     private Config() {
     }
 
@@ -130,8 +139,15 @@ public final class Config {
 
     /** 缓存键：配置变化后，同一个 BDLocation 实例的漂移量需要重算。 */
     public String signature() {
-        return String.format(Locale.US, "%b|%.7f|%.7f|%.2f|%s|%s|%s|%s|%s",
-                enabled, lat, lng, radius, detail, city, province, district, street);
+        // 配置对象创建后不再修改，签名只算一次；这个方法在每次 getter 里都会被调用，
+        // 每次都 String.format 会在定位热路径上产生无谓的分配
+        String s = sig;
+        if (s == null) {
+            s = String.format(Locale.US, "%b|%.7f|%.7f|%.2f|%s|%s|%s|%s|%s",
+                    enabled, lat, lng, radius, detail, city, province, district, street);
+            sig = s;
+        }
+        return s;
     }
 
     private static Config load() {
@@ -183,36 +199,59 @@ public final class Config {
     }
 
     private static Map<String, Object> readDebugFile() {
-        for (File file : candidateFiles()) {
-            try {
-                if (!file.isFile() || !file.canRead()) {
-                    continue;
-                }
-                String text = readAll(file);
-                if (text == null || text.trim().isEmpty()) {
-                    continue;
-                }
-                JSONObject json = new JSONObject(text);
-                Map<String, Object> map = new HashMap<>();
-                for (Iterator<String> it = json.keys(); it.hasNext(); ) {
-                    String key = it.next();
-                    map.put(key, json.get(key));
-                }
-                if (!map.isEmpty()) {
-                    noteChannel("debug-file " + file.getAbsolutePath());
-                    return map;
-                }
-            } catch (Throwable ignored) {
+        // 正常路径只有 /sdcard/Download/ejiahook/config.json 一个文件。
+        // 先直接读它，读不到才去枚举目录找旧版散落文件——枚举在 hook 线程上很贵。
+        File primary = new File(CONFIG_FILE_PATH);
+        Map<String, Object> map = readJson(primary);
+        if (map != null) {
+            noteChannel("debug-file " + primary.getAbsolutePath());
+            return map;
+        }
+        for (File file : legacyFiles()) {
+            map = readJson(file);
+            if (map != null) {
+                noteChannel("debug-file " + file.getAbsolutePath());
+                return map;
             }
+        }
+        File sdcard = new File("/sdcard/ejiahook.json");
+        map = readJson(sdcard);
+        if (map != null) {
+            noteChannel("debug-file " + sdcard.getAbsolutePath());
+            return map;
         }
         return null;
     }
 
-    /** 候选配置文件：新目录优先，其次兼容旧版散落在 Download 下的 ejiahook*.json。 */
-    private static java.util.List<File> candidateFiles() {
-        java.util.List<File> files = new java.util.ArrayList<>();
-        files.add(new File(CONFIG_FILE_PATH));
+    /** 读一个 JSON 配置文件；不存在、不可读、空文件、格式错误都返回 null。 */
+    private static Map<String, Object> readJson(File file) {
+        try {
+            if (!file.isFile() || !file.canRead()) {
+                return null;
+            }
+            String text = readAll(file);
+            if (text == null || text.trim().isEmpty()) {
+                return null;
+            }
+            JSONObject json = new JSONObject(text);
+            Map<String, Object> map = new HashMap<>();
+            for (Iterator<String> it = json.keys(); it.hasNext(); ) {
+                String key = it.next();
+                map.put(key, json.get(key));
+            }
+            return map.isEmpty() ? null : map;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
 
+    /** 旧版散落在 Download 根目录的 ejiahook*.json，按修改时间倒序；结果缓存 30 秒。 */
+    private static java.util.List<File> legacyFiles() {
+        long now = SystemClock.elapsedRealtime();
+        java.util.List<File> cached = sLegacyCache;
+        if (cached != null && now - sLegacyAt < LEGACY_SCAN_MS) {
+            return cached;
+        }
         java.util.List<File> legacy = new java.util.ArrayList<>();
         try {
             File dir = new File(DOWNLOAD_DIR);
@@ -228,9 +267,9 @@ public final class Config {
         } catch (Throwable ignored) {
         }
         legacy.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-        files.addAll(legacy);
-        files.add(new File("/sdcard/ejiahook.json"));
-        return files;
+        sLegacyCache = legacy;
+        sLegacyAt = now;
+        return legacy;
     }
 
     private static String readAll(File file) {
@@ -324,19 +363,30 @@ public final class Config {
 
     /** 在被注入的进程里拿 Application：优先 ActivityThread，兜底 AppGlobals。 */
     static Context appContext() {
+        Context cached = sAppCtx;
+        if (cached != null) {
+            return cached;
+        }
         try {
             Class<?> at = Class.forName("android.app.ActivityThread");
             Method m = at.getDeclaredMethod("currentApplication");
             m.setAccessible(true);
             Application app = (Application) m.invoke(null);
-            if (app != null) return app;
+            if (app != null) {
+                sAppCtx = app;
+                return app;
+            }
         } catch (Throwable ignored) {
         }
         try {
             Class<?> ag = Class.forName("android.app.AppGlobals");
             Method m = ag.getDeclaredMethod("getInitialApplication");
             m.setAccessible(true);
-            return (Application) m.invoke(null);
+            Application app = (Application) m.invoke(null);
+            if (app != null) {
+                sAppCtx = app;
+            }
+            return app;
         } catch (Throwable ignored) {
         }
         return null;

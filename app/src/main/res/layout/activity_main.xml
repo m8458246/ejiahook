@@ -29,6 +29,12 @@
             android:layout_height="wrap_content"
             android:text="@string/enable_system_location" />
 
+        <CheckBox
+            android:id="@+id/cb_root_hook"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/enable_root_hook" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
