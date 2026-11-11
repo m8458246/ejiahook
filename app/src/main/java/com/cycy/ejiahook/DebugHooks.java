@@ -39,19 +39,21 @@ final class DebugHooks {
      */
     private static void hookLocationPayload(XposedModule module, ClassLoader cl) {
         try {
-            Class<?> cls = Class.forName("f.a.a.e", false, cl);
-            Method put = cls.getDeclaredMethod("put", String.class, Object.class);
-            put.setAccessible(true);
-            module.hook(put).intercept(chain -> {
-                if (Config.get().debug) {
-                    Object key = chain.getArg(0);
-                    if ("latitude".equals(key) || "longitude".equals(key) || "address".equals(key)) {
-                        module.log(Log.INFO, TAG, "H5 定位字段 " + key + " = " + chain.getArg(1));
+            // f.a.a.a#g() 把 Map 序列化成 JSON，hanndleLocationData 就是拿它的结果回给 H5
+            Class<?> cls = Class.forName("f.a.a.a", false, cl);
+            Method g = cls.getDeclaredMethod("g");
+            g.setAccessible(true);
+            module.hook(g).intercept(chain -> {
+                Object result = chain.proceed();
+                if (Config.get().debug && result instanceof String) {
+                    String text = (String) result;
+                    if (text.contains("latitude")) {
+                        module.log(Log.INFO, TAG, "H5 定位 JSON = " + text);
                     }
                 }
-                return chain.proceed();
+                return result;
             });
-            module.log(Log.INFO, TAG, "调试 hook: H5 定位字段");
+            module.log(Log.INFO, TAG, "调试 hook: H5 定位 JSON");
         } catch (Throwable t) {
             module.log(Log.WARN, TAG, "调试 hook(H5 定位字段) 失败: " + t);
         }
