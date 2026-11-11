@@ -9,11 +9,14 @@
     <string name="lng">经度（GCJ-02）</string>
     <string name="radius">漂移半径（米，0 表示固定不动）</string>
     <string name="city">城市（可选覆盖）</string>
-    <string name="address">地址（可选覆盖）</string>
+    <string name="address">完整地址（可选覆盖）</string>
+    <string name="province">省（可选覆盖，H5 拼地址用）</string>
+    <string name="district">区（可选覆盖）</string>
+    <string name="street">街道（可选覆盖）</string>
     <string name="device_id">标识值（不勾选覆盖时显示真实值，可直接复制）</string>
     <string name="hint_lat">例如 39.908722</string>
     <string name="hint_lng">例如 116.397499</string>
-    <string name="hint_radius">默认 5</string>
+    <string name="hint_radius">默认 10</string>
     <string name="hint_optional">不填则保留真实值</string>
     <string name="hint_device">例如 867500000000000</string>
     <string name="capture">获取 ejia 当前真实定位</string>

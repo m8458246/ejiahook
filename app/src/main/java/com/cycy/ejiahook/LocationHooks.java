@@ -18,14 +18,14 @@ import io.github.libxposed.api.XposedModule;
  * <pre>
  *   BDLocation.K()  -> double 纬度   （字段 e2，setter j1(double)）
  *   BDLocation.Q()  -> double 经度   （字段 f2，setter p1(double)）
- *   BDLocation.d()  -> String 地址
+ *   BDLocation.d()  -> String 完整地址
  *   BDLocation.i()  -> String 城市
+ *   BDLocation.c0() -> String 省
+ *   BDLocation.r()  -> String 区
+ *   BDLocation.k0() -> String 街道
  * </pre>
- * <p>这是从 ejia 的 com.dcits.ehome.plugin.Geolocation 与 BaiduMapUtils 的调用点
- * 反推出来的：插件里就是 K()/Q()/i()/d() 组装成 {lat,lng,city,address} 回给 H5。</p>
- *
- * <p>做法：读纬度/经度时算出“目标点 + 随机漂移”，顺手用 setter 写回对象本身，
- * 这样同一对象上其它读取方（地图 SDK 等）看到的也是伪造坐标。</p>
+ * <p>H5 拿到的地址有两条路：Cordova 插件用 d()，dsbridge 用 c0()+i()+r()+k0() 拼，
+ * 所以这几个都要能覆盖。</p>
  */
 final class LocationHooks {
 
@@ -33,6 +33,7 @@ final class LocationHooks {
     private static final String BD_LOCATION = "com.baidu.location.BDLocation";
     private static final AtomicInteger sTrace = new AtomicInteger();
 
+    /** 回传真实定位用的广播（模块 App 侧接收后填进输入框） */
     private static final long CAPTURE_TTL_MS = 5 * 60 * 1000L;
 
     private static volatile double sRealLat = Double.NaN;
@@ -70,21 +71,17 @@ final class LocationHooks {
         hookCoord(module, getLat, true, setLat, setLng);
         hookCoord(module, getLng, false, setLat, setLng);
 
-        // 地址/城市：可选覆盖，填了才改
-        Method getAddr = find(cls, "d");
-        if (getAddr != null) {
-            hookText(module, getAddr, true);
-        } else {
-            module.log(Log.WARN, TAG, "BDLocation.d() 未找到，地址覆盖不可用");
-        }
-        Method getCity = find(cls, "i");
-        if (getCity != null) {
-            hookText(module, getCity, false);
-        } else {
-            module.log(Log.WARN, TAG, "BDLocation.i() 未找到，城市覆盖不可用");
-        }
+        hookText(module, cls, "d", "地址", c -> c.address);
+        hookText(module, cls, "i", "城市", c -> c.city);
+        hookText(module, cls, "c0", "省", c -> c.province);
+        hookText(module, cls, "r", "区", c -> c.district);
+        hookText(module, cls, "k0", "街道", c -> c.street);
 
         module.log(Log.INFO, TAG, "定位 hook 安装完成（writeBack=" + canWriteBack + "）");
+    }
+
+    private interface Override {
+        String pick(Config c);
     }
 
     private static void hookCoord(XposedModule module, Method getter, final boolean isLat,
@@ -119,8 +116,8 @@ final class LocationHooks {
                 }
                 if (c.debug && sTrace.getAndIncrement() < 20) {
                     module.log(Log.INFO, TAG, String.format(Locale.US,
-                            "定位替换 %s: 原值=%s -> %.6f,%.6f (半径 %.1fm)",
-                            getter.getName(), raw, target[0], target[1], c.radius));
+                            "定位替换 %s: 原值=%s -> %.6f,%.6f (偏移 %.1fm)",
+                            getter.getName(), raw, target[0], target[1], Drift.meters(c, target)));
                 }
                 return isLat ? target[0] : target[1];
             });
@@ -129,7 +126,15 @@ final class LocationHooks {
         }
     }
 
-    private static void hookText(XposedModule module, Method getter, final boolean isAddr) {
+    private static void hookText(XposedModule module, Class<?> cls, String name,
+                                 final String label, final Override override) {
+        Method getter = find(cls, name);
+        if (getter == null) {
+            module.log(Log.WARN, TAG, "BDLocation." + name + "() 未找到，" + label + "覆盖不可用");
+            return;
+        }
+        final boolean isAddr = "d".equals(name);
+        final boolean isCity = "i".equals(name);
         try {
             module.hook(getter).intercept(chain -> {
                 Object result = chain.proceed();
@@ -137,7 +142,7 @@ final class LocationHooks {
                 if (result instanceof String) {
                     if (isAddr) {
                         sRealAddr = (String) result;
-                    } else {
+                    } else if (isCity) {
                         sRealCity = (String) result;
                     }
                     maybeCapture(module, c);
@@ -145,19 +150,19 @@ final class LocationHooks {
                 if (!c.enabled) {
                     return result;
                 }
-                String override = isAddr ? c.address : c.city;
-                if (override.isEmpty()) {
+                String value = override.pick(c);
+                if (value.isEmpty()) {
                     return result;
                 }
-                if (c.debug && sTrace.getAndIncrement() < 40) {
-                    module.log(Log.INFO, TAG, "文本覆盖 " + getter.getName()
-                            + ": 原值=" + result + " -> " + override);
+                if (c.debug && sTrace.getAndIncrement() < 60) {
+                    module.log(Log.INFO, TAG, "文本覆盖 " + name + "(" + label + "): 原值="
+                            + result + " -> " + value);
                 }
                 // 覆盖值非空就返回它：真机没信号、地址为空时也能给出一个“成功”的定位
-                return override;
+                return value;
             });
         } catch (Throwable t) {
-            module.log(Log.ERROR, TAG, "hook BDLocation." + getter.getName() + " 失败: " + t);
+            module.log(Log.ERROR, TAG, "hook BDLocation." + name + " 失败: " + t);
         }
     }
 

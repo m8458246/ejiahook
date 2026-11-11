@@ -51,8 +51,14 @@ final class Drift {
         }
     }
 
-    private static double[] compute(Config c) {
-        double radius = c.radius;
+    /** 目标点相对配置中心的距离（米），用于调试日志确认漂移真的在变。 */
+    static double meters(Config c, double[] target) {
+        double dLat = (target[0] - c.lat) * METERS_PER_DEG_LAT;
+        double dLng = (target[1] - c.lng) * METERS_PER_DEG_LAT * Math.cos(Math.toRadians(c.lat));
+        return Math.sqrt(dLat * dLat + dLng * dLng);
+    }
+
+    private static double[] compute(Config c) {        double radius = c.radius;
         if (radius <= 0) {
             return new double[]{c.lat, c.lng};
         }

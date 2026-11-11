@@ -47,6 +47,9 @@ public class MainActivity extends Activity {
     private EditText etLng;
     private EditText etRadius;
     private EditText etCity;
+    private EditText etProvince;
+    private EditText etDistrict;
+    private EditText etStreet;
     private EditText etAddress;
     private EditText etDevice;
     private TextView tvDeviceSource;
@@ -93,6 +96,9 @@ public class MainActivity extends Activity {
         etLng = findViewById(R.id.et_lng);
         etRadius = findViewById(R.id.et_radius);
         etCity = findViewById(R.id.et_city);
+        etProvince = findViewById(R.id.et_province);
+        etDistrict = findViewById(R.id.et_district);
+        etStreet = findViewById(R.id.et_street);
         etAddress = findViewById(R.id.et_address);
         etDevice = findViewById(R.id.et_device);
         tvDeviceSource = findViewById(R.id.tv_device_source);
@@ -149,8 +155,11 @@ public class MainActivity extends Activity {
         cbDevice.setChecked(prefs.getBoolean(Config.KEY_DEVICE_ENABLED, false));
         etLat.setText(prefs.getString(Config.KEY_LAT, ""));
         etLng.setText(prefs.getString(Config.KEY_LNG, ""));
-        etRadius.setText(prefs.getString(Config.KEY_RADIUS, "5"));
+        etRadius.setText(prefs.getString(Config.KEY_RADIUS, "10"));
         etCity.setText(prefs.getString(Config.KEY_CITY, ""));
+        etProvince.setText(prefs.getString(Config.KEY_PROVINCE, ""));
+        etDistrict.setText(prefs.getString(Config.KEY_DISTRICT, ""));
+        etStreet.setText(prefs.getString(Config.KEY_STREET, ""));
         etAddress.setText(prefs.getString(Config.KEY_ADDRESS, ""));
     }
 
@@ -234,13 +243,24 @@ public class MainActivity extends Activity {
                 .apply();
         writeConfigFile(true);
 
-        Intent launch = getPackageManager().getLaunchIntentForPackage("com.dcits.ehome");
+        Intent launch = null;
+        try {
+            launch = getPackageManager().getLaunchIntentForPackage("com.dcits.ehome");
+        } catch (Throwable ignored) {
+        }
         if (launch == null) {
-            toast("没找到「神州e家」");
-            return;
+            // 包可见性被限制时 getLaunchIntentForPackage 会返回 null，直接按组件拉起
+            launch = new Intent();
+            launch.setComponent(new android.content.ComponentName(
+                    "com.dcits.ehome", "com.dcits.ehome.activity.SplashScreenActivity"));
         }
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(launch);
+        try {
+            startActivity(launch);
+        } catch (Throwable t) {
+            toast("打不开「神州e家」：" + t.getClass().getSimpleName());
+            return;
+        }
         toast("已打开神州e家，等它读取定位后回到这里");
     }
 
@@ -275,7 +295,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        double radius = 5;
+        double radius = 10;
         if (!radiusText.isEmpty()) {
             try {
                 radius = Double.parseDouble(radiusText);
@@ -302,6 +322,9 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_LNG, locationOn ? format(lng) : "")
                 .putString(Config.KEY_RADIUS, format(radius))
                 .putString(Config.KEY_CITY, etCity.getText().toString().trim())
+                .putString(Config.KEY_PROVINCE, etProvince.getText().toString().trim())
+                .putString(Config.KEY_DISTRICT, etDistrict.getText().toString().trim())
+                .putString(Config.KEY_STREET, etStreet.getText().toString().trim())
                 .putString(Config.KEY_ADDRESS, etAddress.getText().toString().trim())
                 .putBoolean(Config.KEY_DEVICE_ENABLED, deviceOn)
                 // 未启用覆盖时不保存显示出来的真实值，避免把真实标识写进配置
@@ -324,8 +347,11 @@ public class MainActivity extends Activity {
             json.put(Config.KEY_LAT, etLat.getText().toString().trim());
             json.put(Config.KEY_LNG, etLng.getText().toString().trim());
             json.put(Config.KEY_RADIUS, TextUtils.isEmpty(etRadius.getText().toString().trim())
-                    ? "5" : etRadius.getText().toString().trim());
+                    ? "10" : etRadius.getText().toString().trim());
             json.put(Config.KEY_CITY, etCity.getText().toString().trim());
+            json.put(Config.KEY_PROVINCE, etProvince.getText().toString().trim());
+            json.put(Config.KEY_DISTRICT, etDistrict.getText().toString().trim());
+            json.put(Config.KEY_STREET, etStreet.getText().toString().trim());
             json.put(Config.KEY_ADDRESS, etAddress.getText().toString().trim());
             boolean deviceOn = cbDevice.isChecked();
             json.put(Config.KEY_DEVICE_ENABLED, deviceOn);

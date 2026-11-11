@@ -44,6 +44,9 @@ public final class Config {
     public static final String KEY_RADIUS = "radius";
     public static final String KEY_ADDRESS = "address";
     public static final String KEY_CITY = "city";
+    public static final String KEY_PROVINCE = "province";
+    public static final String KEY_DISTRICT = "district";
+    public static final String KEY_STREET = "street";
     public static final String KEY_DEVICE_ENABLED = "device_enabled";
     public static final String KEY_DEVICE_ID = "device_id";
     public static final String KEY_DEBUG = "debug";
@@ -76,6 +79,12 @@ public final class Config {
     public String address = "";
     /** 城市覆盖，空串表示不覆盖 */
     public String city = "";
+    /** 省覆盖 */
+    public String province = "";
+    /** 区覆盖 */
+    public String district = "";
+    /** 街道覆盖 */
+    public String street = "";
     /** 设备标识覆盖开关 */
     public boolean deviceEnabled;
     /** 覆盖后的设备标识 */
@@ -112,8 +121,8 @@ public final class Config {
 
     /** 缓存键：配置变化后，同一个 BDLocation 实例的漂移量需要重算。 */
     public String signature() {
-        return String.format(Locale.US, "%b|%.7f|%.7f|%.2f|%s|%s",
-                enabled, lat, lng, radius, address, city);
+        return String.format(Locale.US, "%b|%.7f|%.7f|%.2f|%s|%s|%s|%s|%s",
+                enabled, lat, lng, radius, address, city, province, district, street);
     }
 
     private static Config load() {
@@ -242,13 +251,16 @@ public final class Config {
     private static Config fromMap(Map<String, ?> map) {
         Config c = new Config();
         c.enabled = getBool(map, KEY_ENABLED, false);
-        c.radius = parseDouble(getStr(map, KEY_RADIUS), 5.0);
+        c.radius = parseDouble(getStr(map, KEY_RADIUS), 10.0);
         if (c.radius < 0) c.radius = 0;
         if (c.radius > 5000) c.radius = 5000;
         c.lat = parseDouble(getStr(map, KEY_LAT), 0);
         c.lng = parseDouble(getStr(map, KEY_LNG), 0);
         c.address = nullToEmpty(getStr(map, KEY_ADDRESS));
         c.city = nullToEmpty(getStr(map, KEY_CITY));
+        c.province = nullToEmpty(getStr(map, KEY_PROVINCE));
+        c.district = nullToEmpty(getStr(map, KEY_DISTRICT));
+        c.street = nullToEmpty(getStr(map, KEY_STREET));
         c.deviceEnabled = getBool(map, KEY_DEVICE_ENABLED, false);
         c.deviceId = nullToEmpty(getStr(map, KEY_DEVICE_ID));
         c.debug = getBool(map, KEY_DEBUG, false);
