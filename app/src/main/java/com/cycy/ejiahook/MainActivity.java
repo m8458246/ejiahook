@@ -65,6 +65,9 @@ public class MainActivity extends Activity {
             double lat = intent.getDoubleExtra("lat", 0);
             double lng = intent.getDoubleExtra("lng", 0);
             String city = intent.getStringExtra("city");
+            String province = intent.getStringExtra("province");
+            String district = intent.getStringExtra("district");
+            String street = intent.getStringExtra("street");
             String address = intent.getStringExtra("address");
             if (lat == 0 && lng == 0) {
                 return;
@@ -74,7 +77,19 @@ public class MainActivity extends Activity {
             if (!TextUtils.isEmpty(city)) {
                 etCity.setText(city);
             }
-            // 地址不自动填：省/市/区/街道留空时本来就保留真实值，不需要手抄
+            if (!TextUtils.isEmpty(province)) {
+                etProvince.setText(province);
+            }
+            if (!TextUtils.isEmpty(district)) {
+                etDistrict.setText(district);
+            }
+            if (!TextUtils.isEmpty(street)) {
+                etStreet.setText(street);
+            }
+            // 完整地址减去已填的省市区街道，剩下的放进「详细地址」
+            if (!TextUtils.isEmpty(address)) {
+                etDetail.setText(remainder(address, province, city, district, street));
+            }
             toast("已填入真实定位，可按需微调后保存");
             // 拿到就关掉回传，避免持续广播
             prefs.edit().putBoolean(Config.KEY_CAPTURE, false).apply();
@@ -114,6 +129,28 @@ public class MainActivity extends Activity {
         if (!hasPhonePermission()) {
             requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, REQ_PHONE);
         }
+    }
+
+    private static String safe(String s) {
+        return s == null ? "" : s;
+    }
+
+    /** 从完整地址里剥掉省市区街道，剩下的当详细地址；剥不干净就返回空，避免重复拼接。 */
+    private static String remainder(String address, String province, String city,
+                                    String district, String street) {
+        String prefix = safe(province) + safe(city) + safe(district) + safe(street);
+        String text = address.startsWith("中国") ? address.substring(2) : address;
+        if (!prefix.isEmpty() && text.startsWith(prefix)) {
+            return text.substring(prefix.length()).trim();
+        }
+        if (!safe(street).isEmpty()) {
+            int index = text.indexOf(street);
+            if (index >= 0) {
+                return text.substring(index + street.length()).trim();
+            }
+        }
+        // 拼不上就留空，让用户自己决定要不要填
+        return "";
     }
 
     private void registerCaptureReceiver() {
@@ -379,7 +416,7 @@ public class MainActivity extends Activity {
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.MediaColumns.DISPLAY_NAME, PUBLIC_FILE_NAME);
                 values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath());
                 Uri uri = cr.insert(collection, values);
                 if (uri != null) {
                     try (OutputStream out = cr.openOutputStream(uri)) {
@@ -393,17 +430,32 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static String relativePath() {
+        return Environment.DIRECTORY_DOWNLOADS + "/" + Config.DOWNLOAD_SUBDIR + "/";
+    }
+
+    /** 在 Download/ejiahook/ 里找自己的配置文件（兼容旧版放在 Download 根目录的）。 */
     private long findPublicFileId(ContentResolver cr, Uri collection) {
+        long fallback = -1;
         try (Cursor cursor = cr.query(collection,
-                new String[]{MediaStore.MediaColumns._ID},
+                new String[]{MediaStore.MediaColumns._ID, MediaStore.MediaColumns.RELATIVE_PATH},
                 MediaStore.MediaColumns.DISPLAY_NAME + "=?",
                 new String[]{PUBLIC_FILE_NAME}, null)) {
-            if (cursor != null && cursor.moveToFirst()) {
-                return cursor.getLong(0);
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    String path = cursor.getString(1);
+                    long id = cursor.getLong(0);
+                    if (path != null && path.contains(Config.DOWNLOAD_SUBDIR)) {
+                        return id;
+                    }
+                    if (fallback < 0) {
+                        fallback = id;
+                    }
+                }
             }
         } catch (Throwable ignored) {
         }
-        return -1;
+        return fallback;
     }
 
     private boolean readDebugFlag() {

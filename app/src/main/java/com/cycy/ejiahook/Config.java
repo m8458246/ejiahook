@@ -58,7 +58,9 @@ public final class Config {
     private static final long TTL_MS = 2000L;
     private static final Object LOCK = new Object();
 
-    /** 配置文件的候选目录/前缀：模块 App 用 MediaStore 写，可能会被系统改名成 ejiahook (1).json */
+    /** 配置目录：/sdcard/Download/ejiahook/ ，配置和定位日志都放这里 */
+    public static final String DOWNLOAD_SUBDIR = "ejiahook";
+    public static final String CONFIG_FILE_PATH = "/sdcard/Download/ejiahook/config.json";
     private static final String DOWNLOAD_DIR = "/sdcard/Download";
     private static final String FILE_PREFIX = "ejiahook";
     private static final String FILE_SUFFIX = ".json";
@@ -200,24 +202,28 @@ public final class Config {
         return null;
     }
 
-    /** 收集候选配置文件，按修改时间从新到旧。 */
+    /** 候选配置文件：新目录优先，其次兼容旧版散落在 Download 下的 ejiahook*.json。 */
     private static java.util.List<File> candidateFiles() {
         java.util.List<File> files = new java.util.ArrayList<>();
+        files.add(new File(CONFIG_FILE_PATH));
+
+        java.util.List<File> legacy = new java.util.ArrayList<>();
         try {
             File dir = new File(DOWNLOAD_DIR);
             File[] list = dir.listFiles();
             if (list != null) {
                 for (File f : list) {
                     String name = f.getName();
-                    if (name.startsWith(FILE_PREFIX) && name.endsWith(FILE_SUFFIX)) {
-                        files.add(f);
+                    if (f.isFile() && name.startsWith(FILE_PREFIX) && name.endsWith(FILE_SUFFIX)) {
+                        legacy.add(f);
                     }
                 }
             }
         } catch (Throwable ignored) {
         }
+        legacy.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        files.addAll(legacy);
         files.add(new File("/sdcard/ejiahook.json"));
-        files.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
         return files;
     }
 

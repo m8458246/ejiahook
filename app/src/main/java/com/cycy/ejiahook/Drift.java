@@ -32,29 +32,42 @@ final class Drift {
     private Drift() {
     }
 
+    /** 一次定位的目标点：fresh 表示这是该 BDLocation 实例第一次取值。 */
+    static final class Target {
+        final double lat;
+        final double lng;
+        final boolean fresh;
+
+        Target(double lat, double lng, boolean fresh) {
+            this.lat = lat;
+            this.lng = lng;
+            this.fresh = fresh;
+        }
+    }
+
     /**
-     * 返回 {lat, lng}。同一个 key（BDLocation 实例）在同一份配置下返回固定值。
+     * 同一个 key（BDLocation 实例）在同一份配置下返回固定值。
      */
-    static double[] targetFor(Object key, Config c) {
+    static Target targetFor(Object key, Config c) {
         String sig = c.signature();
         synchronized (CACHE) {
             Entry e = CACHE.get(key);
             if (e != null && e.signature.equals(sig)) {
-                return new double[]{e.lat, e.lng};
+                return new Target(e.lat, e.lng, false);
             }
             double[] p = compute(c);
             if (CACHE.size() > MAX_ENTRIES) {
                 CACHE.clear();
             }
             CACHE.put(key, new Entry(sig, p[0], p[1]));
-            return p;
+            return new Target(p[0], p[1], true);
         }
     }
 
     /** 目标点相对配置中心的距离（米），用于调试日志确认漂移真的在变。 */
-    static double meters(Config c, double[] target) {
-        double dLat = (target[0] - c.lat) * METERS_PER_DEG_LAT;
-        double dLng = (target[1] - c.lng) * METERS_PER_DEG_LAT * Math.cos(Math.toRadians(c.lat));
+    static double meters(Config c, double lat, double lng) {
+        double dLat = (lat - c.lat) * METERS_PER_DEG_LAT;
+        double dLng = (lng - c.lng) * METERS_PER_DEG_LAT * Math.cos(Math.toRadians(c.lat));
         return Math.sqrt(dLat * dLat + dLng * dLng);
     }
 

@@ -39,6 +39,9 @@ final class LocationHooks {
     private static volatile double sRealLat = Double.NaN;
     private static volatile double sRealLng = Double.NaN;
     private static volatile String sRealCity = "";
+    private static volatile String sRealProvince = "";
+    private static volatile String sRealDistrict = "";
+    private static volatile String sRealStreet = "";
     private static volatile String sRealAddr = "";
     private static volatile long sLastSent;
 
@@ -111,21 +114,26 @@ final class LocationHooks {
                 if (self == null) {
                     return raw;
                 }
-                double[] target = Drift.targetFor(self, c);
+                Drift.Target target = Drift.targetFor(self, c);
                 if (setLat != null && setLng != null) {
                     // 幂等写入：即使 SDK 之后又用真实值覆盖了，下次读取也会重新纠正
                     try {
-                        setLat.invoke(self, target[0]);
-                        setLng.invoke(self, target[1]);
+                        setLat.invoke(self, target.lat);
+                        setLng.invoke(self, target.lng);
                     } catch (Throwable ignored) {
                     }
+                }
+                double offset = Drift.meters(c, target.lat, target.lng);
+                if (target.fresh) {
+                    // 每次新定位只记一行
+                    LocationLog.append(target.lat, target.lng, offset);
                 }
                 if (c.debug && sTrace.getAndIncrement() < 20) {
                     module.log(Log.INFO, TAG, String.format(Locale.US,
                             "定位替换 %s: 原值=%s -> %.6f,%.6f (偏移 %.1fm)",
-                            getter.getName(), raw, target[0], target[1], Drift.meters(c, target)));
+                            getter.getName(), raw, target.lat, target.lng, offset));
                 }
-                return isLat ? target[0] : target[1];
+                return isLat ? target.lat : target.lng;
             });
         } catch (Throwable t) {
             module.log(Log.ERROR, TAG, "hook BDLocation." + getter.getName() + " 失败: " + t);
@@ -146,10 +154,17 @@ final class LocationHooks {
                 Object result = chain.proceed();
                 Config c = Config.get();
                 if (result instanceof String) {
+                    String text = (String) result;
                     if (isAddr) {
-                        sRealAddr = (String) result;
+                        sRealAddr = text;
                     } else if (isCity) {
-                        sRealCity = (String) result;
+                        sRealCity = text;
+                    } else if ("c0".equals(name)) {
+                        sRealProvince = text;
+                    } else if ("r".equals(name)) {
+                        sRealDistrict = text;
+                    } else if ("k0".equals(name)) {
+                        sRealStreet = text;
                     }
                     maybeCapture(module, c);
                 }
@@ -201,6 +216,9 @@ final class LocationHooks {
             intent.putExtra("lat", sRealLat);
             intent.putExtra("lng", sRealLng);
             intent.putExtra("city", sRealCity);
+            intent.putExtra("province", sRealProvince);
+            intent.putExtra("district", sRealDistrict);
+            intent.putExtra("street", sRealStreet);
             intent.putExtra("address", sRealAddr);
             intent.putExtra("ts", now);
             ctx.sendBroadcast(intent);

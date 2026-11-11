@@ -55,7 +55,7 @@ ejia 的调用点（反编译核实）：
 
 读取顺序（先拿到先用）：
 
-1. `/sdcard/Download/ejiahook.json`（模块 App 保存时会写一份到这里，root 调试也改这个）
+1. `/sdcard/Download/ejiahook/config.json`（模块 App 保存时写这里，root 调试也改这个）
 2. `/sdcard/ejiahook.json`（纯 root 调试用，优先级低于上一条的备选）
 3. LSPosed remote preferences
 4. 模块导出的只读 ContentProvider（`com.cycy.ejiahook.config`，部分 ROM 会拦）
@@ -71,6 +71,17 @@ LSPosed 的 remote prefs 读回来也是空的，只有共享存储这条路稳�
 2. 点按钮 → 自动打开「神州e家」
 3. ejia 读取一次定位后，模块把真实经纬度/城市/地址通过广播回传，自动填进输入框
 4. 回到模块微调（比如改到考勤点附近）再勾选保存
+
+## 定位日志
+
+每次 ejia 拿到一次新定位，就往 `/sdcard/Download/ejiahook/location.log` 记一行，新的在最上面：
+
+```
+11-11 10:23:45  25.064466,102.703055  偏移 6.0m
+11-11 10:22:31  25.064571,102.702955  偏移 9.5m
+```
+
+用来观察漂移：每行都是独立一次定位，坐标和偏移都应该不一样。
 
 ## 调试
 
