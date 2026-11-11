@@ -404,7 +404,7 @@ public class MainActivity extends Activity {
         try {
             ContentResolver cr = getContentResolver();
             Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
-            long id = findPublicFileId(cr, collection);
+            long id = findIdInSubdir(cr, collection);
             if (id >= 0) {
                 Uri uri = ContentUris.withAppendedId(collection, id);
                 try (OutputStream out = cr.openOutputStream(uri, "wt")) {
@@ -434,9 +434,18 @@ public class MainActivity extends Activity {
         return Environment.DIRECTORY_DOWNLOADS + "/" + Config.DOWNLOAD_SUBDIR + "/";
     }
 
-    /** 在 Download/ejiahook/ 里找自己的配置文件（兼容旧版放在 Download 根目录的）。 */
+    /** 只找 Download/ejiahook/ 里的配置文件；写的时候必须用它，避免又写回旧文件。 */
+    private long findIdInSubdir(ContentResolver cr, Uri collection) {
+        return findId(cr, collection, true);
+    }
+
+    /** 读的时候宽松一点：先找新目录，找不到再认旧版放在 Download 根目录的。 */
     private long findPublicFileId(ContentResolver cr, Uri collection) {
-        long fallback = -1;
+        long id = findId(cr, collection, true);
+        return id >= 0 ? id : findId(cr, collection, false);
+    }
+
+    private long findId(ContentResolver cr, Uri collection, boolean requireSubdir) {
         try (Cursor cursor = cr.query(collection,
                 new String[]{MediaStore.MediaColumns._ID, MediaStore.MediaColumns.RELATIVE_PATH},
                 MediaStore.MediaColumns.DISPLAY_NAME + "=?",
@@ -445,17 +454,15 @@ public class MainActivity extends Activity {
                 while (cursor.moveToNext()) {
                     String path = cursor.getString(1);
                     long id = cursor.getLong(0);
-                    if (path != null && path.contains(Config.DOWNLOAD_SUBDIR)) {
+                    boolean inSubdir = path != null && path.contains(Config.DOWNLOAD_SUBDIR);
+                    if (inSubdir == requireSubdir) {
                         return id;
-                    }
-                    if (fallback < 0) {
-                        fallback = id;
                     }
                 }
             }
         } catch (Throwable ignored) {
         }
-        return fallback;
+        return -1;
     }
 
     private boolean readDebugFlag() {
