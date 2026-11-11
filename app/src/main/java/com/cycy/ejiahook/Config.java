@@ -51,6 +51,7 @@ public final class Config {
     public static final String KEY_DEVICE_ENABLED = "device_enabled";
     public static final String KEY_DEVICE_ID = "device_id";
     public static final String KEY_DEBUG = "debug";
+    public static final String KEY_SYSTEM_LOCATION = "system_location";
     public static final String KEY_CAPTURE = "capture";
     public static final String KEY_CAPTURE_TS = "capture_ts";
 
@@ -94,6 +95,8 @@ public final class Config {
     public String deviceId = "";
     /** 调试日志开关 */
     public boolean debug;
+    /** 是否同时伪造系统定位（android.location.Location） */
+    public boolean systemLocation = true;
     /** 是否请求回传一次真实定位 */
     public boolean capture;
     /** 回传请求的时间戳（毫秒），过期作废 */
@@ -271,6 +274,7 @@ public final class Config {
         c.deviceEnabled = getBool(map, KEY_DEVICE_ENABLED, false);
         c.deviceId = nullToEmpty(getStr(map, KEY_DEVICE_ID));
         c.debug = getBool(map, KEY_DEBUG, false);
+        c.systemLocation = getBool(map, KEY_SYSTEM_LOCATION, true);
         c.capture = getBool(map, KEY_CAPTURE, false);
         c.captureTs = (long) parseDouble(getStr(map, KEY_CAPTURE_TS), 0);
         c.hasTarget = (c.lat != 0 || c.lng != 0)

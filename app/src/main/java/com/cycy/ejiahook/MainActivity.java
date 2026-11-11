@@ -43,6 +43,7 @@ public class MainActivity extends Activity {
 
     private CheckBox cbLocation;
     private CheckBox cbDevice;
+    private CheckBox cbSystemLocation;
     private EditText etLat;
     private EditText etLng;
     private EditText etRadius;
@@ -105,6 +106,7 @@ public class MainActivity extends Activity {
 
         cbLocation = findViewById(R.id.cb_location);
         cbDevice = findViewById(R.id.cb_device);
+        cbSystemLocation = findViewById(R.id.cb_system_location);
         etLat = findViewById(R.id.et_lat);
         etLng = findViewById(R.id.et_lng);
         etRadius = findViewById(R.id.et_radius);
@@ -188,6 +190,7 @@ public class MainActivity extends Activity {
     private void load() {
         cbLocation.setChecked(prefs.getBoolean(Config.KEY_ENABLED, false));
         cbDevice.setChecked(prefs.getBoolean(Config.KEY_DEVICE_ENABLED, false));
+        cbSystemLocation.setChecked(prefs.getBoolean(Config.KEY_SYSTEM_LOCATION, true));
         etLat.setText(prefs.getString(Config.KEY_LAT, ""));
         etLng.setText(prefs.getString(Config.KEY_LNG, ""));
         etRadius.setText(prefs.getString(Config.KEY_RADIUS, "10"));
@@ -361,6 +364,7 @@ public class MainActivity extends Activity {
                 .putString(Config.KEY_DISTRICT, etDistrict.getText().toString().trim())
                 .putString(Config.KEY_STREET, etStreet.getText().toString().trim())
                 .putString(Config.KEY_DETAIL, etDetail.getText().toString().trim())
+                .putBoolean(Config.KEY_SYSTEM_LOCATION, cbSystemLocation.isChecked())
                 .putBoolean(Config.KEY_DEVICE_ENABLED, deviceOn)
                 // 未启用覆盖时不保存显示出来的真实值，避免把真实标识写进配置
                 .putString(Config.KEY_DEVICE_ID, deviceOn ? deviceId : "")
@@ -389,6 +393,7 @@ public class MainActivity extends Activity {
             json.put(Config.KEY_STREET, etStreet.getText().toString().trim());
             json.put(Config.KEY_DETAIL, etDetail.getText().toString().trim());
             boolean deviceOn = cbDevice.isChecked();
+            json.put(Config.KEY_SYSTEM_LOCATION, cbSystemLocation.isChecked());
             json.put(Config.KEY_DEVICE_ENABLED, deviceOn);
             json.put(Config.KEY_DEVICE_ID, deviceOn ? etDevice.getText().toString().trim() : "");
             // 调试开关由 root 侧控制，UI 保存时保留原值
