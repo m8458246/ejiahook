@@ -49,7 +49,8 @@ final class LocationHooks {
     private static volatile String sCapDistrict = "";
     private static volatile String sCapStreet = "";
     private static volatile String sCapAddr = "";
-    private static volatile long sLastSent;
+    /** 上一次广播出去的内容签名：内容没变就不重复发，变了（比如地址后到）就补发一次 */
+    private static volatile String sLastSentSig = "";
 
     private LocationHooks() {
     }
@@ -208,6 +209,7 @@ final class LocationHooks {
             sCapDistrict = "";
             sCapStreet = "";
             sCapAddr = "";
+            sLastSentSig = "";
         }
         if (isLat) {
             sCapLat = value;
@@ -234,6 +236,7 @@ final class LocationHooks {
             sCapDistrict = "";
             sCapStreet = "";
             sCapAddr = "";
+            sLastSentSig = "";
         }
         switch (name) {
             case "d":
@@ -278,10 +281,14 @@ final class LocationHooks {
         if (Double.isNaN(sCapLat) || Double.isNaN(sCapLng)) {
             return;
         }
-        if (now - sLastSent < 2000) {
+        // 经纬度先到、地址后到，所以按“内容变化”补发，而不是固定节流；
+        // 否则会在地址字段还没读出来时就发出去，导致回传的城市/地址是空的
+        String sig = sCapLat + "," + sCapLng + "|" + sCapProvince + sCapCity
+                + sCapDistrict + sCapStreet + sCapAddr;
+        if (sig.equals(sLastSentSig)) {
             return;
         }
-        sLastSent = now;
+        sLastSentSig = sig;
         try {
             Context ctx = Config.appContext();
             if (ctx == null) {
