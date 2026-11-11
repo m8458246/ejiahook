@@ -29,6 +29,32 @@ final class DebugHooks {
         hookEncapsulatedResult(module, cl);
         hookPluginExecute(module, cl);
         hookDsBridgeLocation(module, cl);
+        hookLocationPayload(module, cl);
+    }
+
+    /**
+     * H5 拿到的定位字段就是在这里拼的：DsBridgeWebViewActivity#hanndleLocationData 往
+     * 一个 Map（f.a.a.e）里 put address/latitude/longitude，然后序列化回给 JS。
+     * 这里把真正塞进去的值打出来，可以和 location.log 对照。
+     */
+    private static void hookLocationPayload(XposedModule module, ClassLoader cl) {
+        try {
+            Class<?> cls = Class.forName("f.a.a.e", false, cl);
+            Method put = cls.getDeclaredMethod("put", String.class, Object.class);
+            put.setAccessible(true);
+            module.hook(put).intercept(chain -> {
+                if (Config.get().debug) {
+                    Object key = chain.getArg(0);
+                    if ("latitude".equals(key) || "longitude".equals(key) || "address".equals(key)) {
+                        module.log(Log.INFO, TAG, "H5 定位字段 " + key + " = " + chain.getArg(1));
+                    }
+                }
+                return chain.proceed();
+            });
+            module.log(Log.INFO, TAG, "调试 hook: H5 定位字段");
+        } catch (Throwable t) {
+            module.log(Log.WARN, TAG, "调试 hook(H5 定位字段) 失败: " + t);
+        }
     }
 
     /**
