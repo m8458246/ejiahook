@@ -39,7 +39,7 @@ import java.io.OutputStream;
 public class MainActivity extends Activity {
 
     private static final int REQ_PHONE = 1001;
-    private static final String PUBLIC_FILE_NAME = "ejiahook.json";
+    private static final String PUBLIC_FILE_NAME = "config.json";
 
     private CheckBox cbLocation;
     private CheckBox cbDevice;
