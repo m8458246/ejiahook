@@ -35,7 +35,9 @@ final class LocationLog {
 
     static void append(double lat, double lng, double offsetMeters) {
         String time = new SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(new Date());
-        String line = String.format(Locale.US, "%s  %.6f,%.6f  偏移 %.1fm", time, lat, lng, offsetMeters);
+        // 用 Double.toString，和 H5 收到的 JSON 里数字的写法完全一致，方便逐字核对
+        String line = String.format(Locale.US, "%s  %s,%s  偏移 %.1fm",
+                time, Double.toString(lat), Double.toString(lng), offsetMeters);
         try {
             EXEC.execute(() -> write(line));
         } catch (Throwable ignored) {
